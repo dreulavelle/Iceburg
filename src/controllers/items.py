@@ -74,11 +74,11 @@ async def get_items(
     if search:
         search_lower = search.lower()
         if search_lower.startswith("tt"):
-            query = query.where(MediaItem.imdb_id == search_lower)
+            query = query.where(MediaItem.ids["imdb_id"] == search_lower)
         else:
             query = query.where(
                 (func.lower(MediaItem.title).like(f"%{search_lower}%")) |
-                (func.lower(MediaItem.imdb_id).like(f"%{search_lower}%"))
+                (func.lower(MediaItem.ids["imdb_id"]).like(f"%{search_lower}%"))
             )
 
     if state:
@@ -168,7 +168,7 @@ async def add_items(
     with db.Session() as _:
         for id in valid_ids:
             item = MediaItem({"imdb_id": id, "requested_by": "riven", "requested_at": datetime.now()})
-            request.app.program.em.add_item(item)
+            request.app.program.em.add_item(item, "ApiAdd")
 
     return {"success": True, "message": f"Added {len(valid_ids)} item(s) to the queue"}
 
@@ -180,7 +180,7 @@ async def add_items(
 async def get_item(request: Request, id: int):
     with db.Session() as session:
         try:
-            item = session.execute(select(MediaItem).where(MediaItem._id == id)).unique().scalar_one()
+            item = session.execute(select(MediaItem).where(MediaItem.id == id)).unique().scalar_one()
         except NoResultFound:
             raise HTTPException(status_code=404, detail="Item not found")
         return {"success": True, "item": item.to_extended_dict()}
@@ -195,7 +195,7 @@ async def get_items_by_imdb_ids(request: Request, imdb_ids: str):
     with db.Session() as session:
         items = []
         for id in ids:
-            item = session.execute(select(MediaItem).where(MediaItem.imdb_id == id)).unique().scalar_one()
+            item = session.execute(select(MediaItem).where(MediaItem.ids["imdb_id"] == id)).unique().scalar_one()
             if item:
                 items.append(item)
         return {"success": True, "items": [item.to_extended_dict() for item in items]}
@@ -219,7 +219,7 @@ async def reset_items(
                 clear_streams(media_item)
                 reset_media_item(media_item)
             except Exception as e:
-                logger.error(f"Failed to reset item with id {media_item._id}: {str(e)}")
+                logger.error(f"Failed to reset item with id {media_item.id}: {str(e)}")
                 continue
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -257,7 +257,7 @@ async def remove_item(request: Request, ids: str):
         if not media_items:
             raise ValueError("Invalid item ID(s) provided. Some items may not exist.")
         for media_item in media_items:
-            logger.debug(f"Removing item {media_item.title} with ID {media_item._id}")
+            logger.debug(f"Removing item {media_item.title} with ID {media_item.id}")
             request.app.program.em.cancel_job(media_item)
             await asyncio.sleep(0.1) # Ensure cancellation is processed
             clear_streams(media_item)
@@ -375,7 +375,7 @@ def set_torrent_rd(request: Request, id: int, torrent_id: str):
 #         items = []
 #         return_dict = {}
 #         for id in ids:
-#             items.append(session.execute(select(MediaItem).where(MediaItem._id == id)).unique().scalar_one())
+#             items.append(session.execute(select(MediaItem).where(MediaItem.id == id)).unique().scalar_one())
 #     if any(item for item in items if item.type in ["Season", "Episode"]):
 #         raise HTTPException(status_code=400, detail="Only shows and movies can be manually scraped currently")
 #     for item in items:
@@ -393,7 +393,7 @@ def set_torrent_rd(request: Request, id: int, torrent_id: str):
 # async def download(request: Request, id: str, hash: str):
 #     downloader = request.app.program.services.get(Downloader).service
 #     with db.Session() as session:
-#         item = session.execute(select(MediaItem).where(MediaItem._id == id)).unique().scalar_one()
+#         item = session.execute(select(MediaItem).where(MediaItem.id == id)).unique().scalar_one()
 #         item.reset(True)
 #         downloader.download_cached(item, hash)
 #         request.app.program.add_to_queue(item)

@@ -10,7 +10,7 @@ import requests
 from pydantic import BaseModel
 from requests import HTTPError, ReadTimeout, RequestException, Timeout
 
-from program.media.item import Episode, MediaItem, Movie, Season, Show
+from program.media.item import ProfileData
 from program.settings.manager import settings_manager
 from utils.logger import logger
 from utils.ratelimiter import RateLimiter, RateLimitExceeded
@@ -74,11 +74,11 @@ class Jackett:
         logger.warning("Jackett is not configured and will not be used.")
         return False
 
-    def run(self, item: MediaItem) -> Generator[MediaItem, None, None]:
+    def run(self, profile: ProfileData) -> Dict[str, str]:
         """Scrape the Jackett site for the given media items
         and update the object with scraped streams"""
         try:
-            return self.scrape(item)
+            return self.scrape(profile)
         except RateLimitExceeded:
             if self.second_limiter:
                 self.second_limiter.limit_hit()
@@ -88,20 +88,20 @@ class Jackett:
             logger.error(f"Jackett failed to scrape item with error: {e}")
         return {}
 
-    def scrape(self, item: MediaItem) -> Dict[str, str]:
+    def scrape(self, profile: ProfileData) -> Dict[str, str]:
         """Scrape the given media item"""
-        data, stream_count = self.api_scrape(item)
+        data, stream_count = self.api_scrape(profile)
         if data:
-            logger.log("SCRAPER", f"Found {len(data)} streams out of {stream_count} for {item.log_string}")
+            logger.log("SCRAPER", f"Found {len(data)} streams out of {stream_count} for {profile.log_string}")
         else:
-            logger.log("NOT_FOUND", f"No streams found for {item.log_string}")
+            logger.log("NOT_FOUND", f"No streams found for {profile.log_string}")
         return data
 
-    def api_scrape(self, item: MediaItem) -> tuple[Dict[str, str], int]:
+    def api_scrape(self, profile: ProfileData) -> Dict[str, str]:
         """Wrapper for `Jackett` scrape method"""
         results_queue = queue.Queue()
         threads = [
-            threading.Thread(target=self._thread_target, args=(item, indexer, results_queue))
+            threading.Thread(target=self._thread_target, args=(profile, indexer, results_queue))
             for indexer in self.indexers
         ]
 
@@ -113,26 +113,26 @@ class Jackett:
         results = self._collect_results(results_queue)
         return self._process_results(results)
 
-    def _thread_target(self, item: MediaItem, indexer: JackettIndexer, results_queue: queue.Queue):
+    def _thread_target(self, profile: ProfileData, indexer: JackettIndexer, results_queue: queue.Queue):
         """Thread target for searching indexers"""
         try:
             start_time = time.perf_counter()
-            result = self._search_indexer(item, indexer)
+            result = self._search_indexer(profile, indexer)
             search_duration = time.perf_counter() - start_time
         except TypeError as e:
-            logger.error(f"Invalid Type for {item.log_string}: {e}")
+            logger.error(f"Invalid Type for {profile.log_string}: {e}")
             result = []
             search_duration = 0
-        item_title = item.log_string
+        item_title = profile.log_string
         logger.debug(f"Scraped {item_title} from {indexer.title} in {search_duration:.2f} seconds with {len(result)} results")
         results_queue.put(result)
 
-    def _search_indexer(self, item: MediaItem, indexer: JackettIndexer) -> List[Tuple[str, str]]:
+    def _search_indexer(self, profile: ProfileData, indexer: JackettIndexer) -> List[Tuple[str, str]]:
         """Search for the given item on the given indexer"""
-        if isinstance(item, Movie):
-            return self._search_movie_indexer(item, indexer)
-        elif isinstance(item, (Show, Season, Episode)):
-            return self._search_series_indexer(item, indexer)
+        if profile.parent.type == "movie":
+            return self._search_movie_indexer(profile, indexer)
+        elif profile.parent.type in ["show", "season", "episode"]:
+            return self._search_series_indexer(profile, indexer)
         else:
             raise TypeError("Only Movie and Series is allowed!")
 
@@ -153,7 +153,7 @@ class Jackett:
             torrents[result[1]] = result[0]
         return torrents, len(results)
 
-    def _search_movie_indexer(self, item: MediaItem, indexer: JackettIndexer) -> List[Tuple[str, str]]:
+    def _search_movie_indexer(self, profile: ProfileData, indexer: JackettIndexer) -> List[Tuple[str, str]]:
         """Search for movies on the given indexer"""
         if indexer.movie_search_capabilities is None:
             return []
@@ -161,24 +161,24 @@ class Jackett:
             "apikey": self.api_key,
             "t": "movie",
             "cat": "2000",
-            "q": item.title,
+            "q": profile.parent.title,
         }
         if indexer.movie_search_capabilities and "year" in indexer.movie_search_capabilities:
-            if hasattr(item.aired_at, "year") and item.aired_at.year: params["year"] = item.aired_at.year
+            if hasattr(profile.parent.aired_at, "year") and profile.parent.aired_at.year: params["year"] = profile.parent.aired_at.year
         if indexer.movie_search_capabilities and "imdbid" in indexer.movie_search_capabilities:
-            params["imdbid"] = item.imdb_id
+            params["imdbid"] = profile.parent.ids["imdb_id"]
 
         url = f"{self.settings.url}/api/v2.0/indexers/{indexer.id}/results/torznab/api"
         return self._fetch_results(url, params, indexer.title, "movie")
 
-    def _search_series_indexer(self, item: MediaItem, indexer: JackettIndexer) -> List[Tuple[str, str]]:
+    def _search_series_indexer(self, profile: ProfileData, indexer: JackettIndexer) -> List[Tuple[str, str]]:
         """Search for series on the given indexer"""
         if indexer.tv_search_capabilities is None:
             return []
-        q, season, ep = self._get_series_search_params(item)
+        q, season, ep = self._get_series_search_params(profile)
 
         if not q:
-            logger.debug(f"No search query found for {item.log_string}")
+            logger.debug(f"No search query found for {profile.log_string}")
             return []
 
         params = {
@@ -190,19 +190,20 @@ class Jackett:
         if ep and indexer.tv_search_capabilities and "ep" in indexer.tv_search_capabilities: params["ep"] = ep 
         if season and indexer.tv_search_capabilities and "season" in indexer.tv_search_capabilities: params["season"] = season
         if indexer.tv_search_capabilities and "imdbid" in indexer.tv_search_capabilities:
-            params["imdbid"] = item.imdb_id if isinstance(item, (Episode, Show)) else item.parent.imdb_id
+            params["imdbid"] = profile.parent.get_top_imdb_id()
 
         url = f"{self.settings.url}/api/v2.0/indexers/{indexer.id}/results/torznab/api"
         return self._fetch_results(url, params, indexer.title, "series")
 
-    def _get_series_search_params(self, item: MediaItem) -> Tuple[str, int, Optional[int]]:
+    def _get_series_search_params(self, profile: ProfileData) -> Tuple[str, int, Optional[int]]:
         """Get search parameters for series"""
-        if isinstance(item, Show):
-            return item.get_top_title(), None, None
-        elif isinstance(item, Season):
-            return item.get_top_title(), item.number, None
-        elif isinstance(item, Episode):
-            return item.get_top_title(), item.parent.number, item.number
+        title = profile.parent.get_top_title()
+        if profile.parent.type == "show":
+            return title, None, None
+        elif profile.parent.type == "season":
+            return title, profile.parent.number, None
+        elif profile.parent.type == "episode":
+            return title, profile.parent.parent.number, profile.parent.number
         return "", 0, None
 
     def _get_indexers(self) -> List[JackettIndexer]:

@@ -138,5 +138,5 @@
 #     
 #     assert len(missing_items) == 4
 #     assert missing_items[next(iter(missing_items))].state == States.Unknown
-#     assert missing_items[next(iter(missing_items))].imdb_id == "tt1405406"
+#     assert missing_items[next(iter(missing_items))].ids["imdb_id"] == "tt1405406"
 #     assert missing_items[next(iter(missing_items))].title == "Test Show"

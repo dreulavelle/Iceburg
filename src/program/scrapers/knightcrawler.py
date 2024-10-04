@@ -4,7 +4,7 @@ from typing import Dict
 from requests import ConnectTimeout, ReadTimeout
 from requests.exceptions import RequestException
 
-from program.media.item import Episode, MediaItem
+from program.media.item import ProfileData
 from program.scrapers.shared import _get_stremio_identifier
 from program.settings.manager import settings_manager
 from utils.logger import logger
@@ -48,36 +48,33 @@ class Knightcrawler:
             return False
         return True
 
-    def run(self, item: MediaItem) -> Dict[str, str]:
+    def run(self, profile: ProfileData) -> Dict[str, str]:
         """Scrape the knightcrawler site for the given media items
         and update the object with scraped streams"""
-        if not item:
-            return {}
-
         try:
-            return self.scrape(item)
+            return self.scrape(profile)
         except RateLimitExceeded:
             if self.second_limiter:
                 self.second_limiter.limit_hit()
         except ConnectTimeout:
-            logger.warning(f"Knightcrawler connection timeout for item: {item.log_string}")
+            logger.warning(f"Knightcrawler connection timeout for item: {profile.log_string}")
         except ReadTimeout:
-            logger.warning(f"Knightcrawler read timeout for item: {item.log_string}")
+            logger.warning(f"Knightcrawler read timeout for item: {profile.log_string}")
         except RequestException as e:
             if e.response.status_code == 429:
                 if self.second_limiter:
                     self.second_limiter.limit_hit()
                 else:
-                    logger.warning(f"Knightcrawler ratelimit exceeded for item: {item.log_string}")
+                    logger.warning(f"Knightcrawler ratelimit exceeded for item: {profile.log_string}")
             else:
                 logger.error(f"Knightcrawler request exception: {e}")
         except Exception as e:
             logger.error(f"Knightcrawler exception thrown: {e}")
         return {}
 
-    def scrape(self, item: MediaItem) -> Dict[str, str]:
+    def scrape(self, profile: ProfileData) -> Dict[str, str]:
         """Wrapper for `Knightcrawler` scrape method"""
-        identifier, scrape_type, imdb_id = _get_stremio_identifier(item)
+        identifier, scrape_type, imdb_id = _get_stremio_identifier(profile)
 
         url = f"{self.settings.url}/{self.settings.filter}/stream/{scrape_type}/{imdb_id}"
         if identifier:
@@ -98,8 +95,8 @@ class Knightcrawler:
         }
 
         if torrents:
-            logger.log("SCRAPER", f"Found {len(torrents)} streams for {item.log_string}")
+            logger.log("SCRAPER", f"Found {len(torrents)} streams for {profile.log_string}")
         else:
-            logger.log("NOT_FOUND", f"No streams found for {item.log_string}")
+            logger.log("NOT_FOUND", f"No streams found for {profile.log_string}")
 
         return torrents

@@ -95,6 +95,6 @@ def test_media_item_creation(symlink_library, fs):
     fs.create_file("/fake/library/movies/Top Gun (1986) tt0092099.mkv")
     items = list(symlink_library.run())
     assert len(items) == 1, "Should create one media item."
-    assert items[0].imdb_id == "tt0092099", "Media item should have the correct IMDb ID."
+    assert items[0].ids["imdb_id"] == "tt0092099", "Media item should have the correct IMDb ID."
     assert isinstance(items[0], Movie), "The created item should be a Movie."
     assert items[0].state == States.Completed, "The created item should be in the Completed state."

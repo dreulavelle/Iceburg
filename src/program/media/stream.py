@@ -9,28 +9,27 @@ from program.db.db import db
 from utils.logger import logger
 
 if TYPE_CHECKING:
-    from program.media.item import MediaItem
-    from program.media.state import States
+    from program.media.item import ProfileData
 
 
 class StreamRelation(db.Model):
-    __tablename__ = "StreamRelation"
+    __tablename__ = "streamrelation"
 
-    _id: Mapped[int] = mapped_column(sqlalchemy.Integer, primary_key=True)
-    parent_id: Mapped[int] = mapped_column(sqlalchemy.Integer, sqlalchemy.ForeignKey("MediaItem._id", ondelete="CASCADE"))
-    child_id: Mapped[int] = mapped_column(sqlalchemy.Integer, sqlalchemy.ForeignKey("Stream._id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(sqlalchemy.Integer, primary_key=True)
+    parent_id: Mapped[int] = mapped_column(sqlalchemy.Integer, sqlalchemy.ForeignKey("profiledata.id", ondelete="CASCADE"))
+    child_id: Mapped[int] = mapped_column(sqlalchemy.Integer, sqlalchemy.ForeignKey("stream.id", ondelete="CASCADE"))
 
     __table_args__ = (
         Index('ix_streamrelation_parent_id', 'parent_id'),
         Index('ix_streamrelation_child_id', 'child_id'),
     )
-    
-class StreamBlacklistRelation(db.Model):
-    __tablename__ = "StreamBlacklistRelation"
 
-    _id: Mapped[int] = mapped_column(sqlalchemy.Integer, primary_key=True)
-    media_item_id: Mapped[int] = mapped_column(sqlalchemy.Integer, sqlalchemy.ForeignKey("MediaItem._id", ondelete="CASCADE"))
-    stream_id: Mapped[int] = mapped_column(sqlalchemy.Integer, sqlalchemy.ForeignKey("Stream._id", ondelete="CASCADE"))
+class StreamBlacklistRelation(db.Model):
+    __tablename__ = "streamblacklistrelation"
+
+    id: Mapped[int] = mapped_column(sqlalchemy.Integer, primary_key=True)
+    media_item_id: Mapped[int] = mapped_column(sqlalchemy.Integer, sqlalchemy.ForeignKey("profiledata.id", ondelete="CASCADE"))
+    stream_id: Mapped[int] = mapped_column(sqlalchemy.Integer, sqlalchemy.ForeignKey("stream.id", ondelete="CASCADE"))
 
     __table_args__ = (
         Index('ix_streamblacklistrelation_media_item_id', 'media_item_id'),
@@ -38,17 +37,17 @@ class StreamBlacklistRelation(db.Model):
     )
 
 class Stream(db.Model):
-    __tablename__ = "Stream"
+    __tablename__ = "stream"
 
-    _id: Mapped[int] = mapped_column(sqlalchemy.Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(sqlalchemy.Integer, primary_key=True)
     infohash: Mapped[str] = mapped_column(sqlalchemy.String, nullable=False)
     raw_title: Mapped[str] = mapped_column(sqlalchemy.String, nullable=False)
     parsed_title: Mapped[str] = mapped_column(sqlalchemy.String, nullable=False)
     rank: Mapped[int] = mapped_column(sqlalchemy.Integer, nullable=False)
     lev_ratio: Mapped[float] = mapped_column(sqlalchemy.Float, nullable=False)
 
-    parents: Mapped[list["MediaItem"]] = relationship(secondary="StreamRelation", back_populates="streams")
-    blacklisted_parents: Mapped[list["MediaItem"]] = relationship(secondary="StreamBlacklistRelation", back_populates="blacklisted_streams")
+    parents: Mapped[list["ProfileData"]] = relationship(secondary="streamrelation", back_populates="streams")
+    blacklisted_parents: Mapped[list["ProfileData"]] = relationship(secondary="streamblacklistrelation", back_populates="blacklisted_streams")
 
     __table_args__ = (
         Index('ix_stream_infohash', 'infohash'),
@@ -66,6 +65,6 @@ class Stream(db.Model):
 
     def __hash__(self):
         return self.infohash
-    
+
     def __eq__(self, other):
         return isinstance(other, Stream) and self.infohash == other.infohash

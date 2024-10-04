@@ -54,18 +54,18 @@ class Mdblist:
                     else:
                         items = list_items_by_url(list, self.settings.api_key)
                     for item in items:
-                        if hasattr(item, "error") or not item or item.imdb_id is None:
+                        if hasattr(item, "error") or not item or item.ids["imdb_id"] is None:
                             continue
-                        if item.imdb_id.startswith("tt"):
+                        if item.ids["imdb_id"].startswith("tt"):
                             items_to_yield.append(MediaItem(
-                                {"imdb_id": item.imdb_id, "requested_by": self.key}
+                                {"imdb_id": item.ids["imdb_id"], "requested_by": self.key}
                             ))
         except RateLimitExceeded:
             pass
 
         non_existing_items = _filter_existing_items(items_to_yield)
-        new_non_recurring_items = [item for item in non_existing_items if item.imdb_id not in self.recurring_items and isinstance(item, MediaItem)]
-        self.recurring_items.update([item.imdb_id for item in new_non_recurring_items])
+        new_non_recurring_items = [item for item in non_existing_items if item.ids["imdb_id"] not in self.recurring_items and isinstance(item, MediaItem)]
+        self.recurring_items.update([item.ids["imdb_id"] for item in new_non_recurring_items])
 
         if new_non_recurring_items:
             logger.info(f"Found {len(new_non_recurring_items)} new items to fetch")

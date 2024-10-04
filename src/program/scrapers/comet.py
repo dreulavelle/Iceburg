@@ -7,7 +7,7 @@ import regex
 from requests import ConnectTimeout, ReadTimeout
 from requests.exceptions import RequestException
 
-from program.media.item import MediaItem, Show
+from program.media.item import ProfileData
 from program.settings.manager import settings_manager
 from program.scrapers.shared import _get_stremio_identifier
 from utils.logger import logger
@@ -58,35 +58,29 @@ class Comet:
             logger.error(f"Comet failed to initialize: {e}", )
         return False
 
-    def run(self, item: MediaItem) -> Dict[str, str]:
+    def run(self, profile: ProfileData) -> Dict[str, str]:
         """Scrape the comet site for the given media items
         and update the object with scraped streams"""
-        if not item or isinstance(item, Show):
-            return {}
-
         try:
-            return self.scrape(item)
+            return self.scrape(profile)
         except RateLimitExceeded:
             if self.hour_limiter:
                 self.hour_limiter.limit_hit()
             else:
-                logger.warning(f"Comet ratelimit exceeded for item: {item.log_string}")
+                logger.warning(f"Comet ratelimit exceeded for item: {profile.log_string}")
         except ConnectTimeout:
-            logger.warning(f"Comet connection timeout for item: {item.log_string}")
+            logger.warning(f"Comet connection timeout for item: {profile.log_string}")
         except ReadTimeout:
-            logger.warning(f"Comet read timeout for item: {item.log_string}")
+            logger.warning(f"Comet read timeout for item: {profile.log_string}")
         except RequestException as e:
             logger.error(f"Comet request exception: {str(e)}")
         except Exception as e:
             logger.error(f"Comet exception thrown: {str(e)}")
         return {}
 
-    def scrape(self, item: MediaItem) -> tuple[Dict[str, str], int]:
+    def scrape(self, profile: ProfileData) -> Dict[str, str]:
         """Wrapper for `Comet` scrape method"""
-        identifier, scrape_type, imdb_id = _get_stremio_identifier(item)
-        if not imdb_id:
-            return {}
-
+        identifier, scrape_type, imdb_id = _get_stremio_identifier(profile)
         url = f"{self.settings.url}/{self.encoded_string}/stream/{scrape_type}/{imdb_id}{identifier or ''}.json"
 
         if self.second_limiter:
@@ -115,8 +109,8 @@ class Comet:
             torrents[infohash] = title
 
         if torrents:
-            logger.log("SCRAPER", f"Found {len(torrents)} streams for {item.log_string}")
+            logger.log("SCRAPER", f"Found {len(torrents)} streams for {profile.log_string}")
         else:
-            logger.log("NOT_FOUND", f"No streams found for {item.log_string}")
+            logger.log("NOT_FOUND", f"No streams found for {profile.log_string}")
 
         return torrents

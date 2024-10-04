@@ -6,7 +6,7 @@ import requests
 from requests import ConnectTimeout, ReadTimeout
 from requests.exceptions import RequestException
 
-from program.media.item import MediaItem
+from program.media.item import ProfileData
 from program.scrapers.shared import _get_stremio_identifier
 from program.settings.manager import settings_manager
 from program.settings.models import AppModel
@@ -93,32 +93,28 @@ class Mediafusion:
             logger.error(f"Mediafusion failed to initialize: {e}")
             return False
 
-    def run(self, item: MediaItem) -> Dict[str, str]:
-        """Scrape the mediafusion site for the given media items
-        and update the object with scraped streams"""
-        if not item:
-            return {}
-
+    def run(self, profile: ProfileData) -> Dict[str, str]:
+        """Scrape `Mediafusion` for the given profile"""
         try:
-            return self.scrape(item)
+            return self.scrape(profile)
         except RateLimitExceeded:
             if self.second_limiter:
                 self.second_limiter.limit_hit()
             else:
-                logger.warning(f"Mediafusion ratelimit exceeded for item: {item.log_string}")
+                logger.warning(f"Mediafusion ratelimit exceeded for item: {profile.log_string}")
         except ConnectTimeout:
-            logger.warning(f"Mediafusion connection timeout for item: {item.log_string}")
+            logger.warning(f"Mediafusion connection timeout for item: {profile.log_string}")
         except ReadTimeout:
-            logger.warning(f"Mediafusion read timeout for item: {item.log_string}")
+            logger.warning(f"Mediafusion read timeout for item: {profile.log_string}")
         except RequestException as e:
             logger.error(f"Mediafusion request exception: {e}")
         except Exception as e:
             logger.error(f"Mediafusion exception thrown: {e}")
         return {}
 
-    def scrape(self, item: MediaItem) -> tuple[Dict[str, str], int]:
+    def scrape(self, profile: ProfileData) -> Dict[str, str]:
         """Wrapper for `Mediafusion` scrape method"""
-        identifier, scrape_type, imdb_id = _get_stremio_identifier(item)
+        identifier, scrape_type, imdb_id = _get_stremio_identifier(profile)
 
         url = f"{self.settings.url}/{self.encrypted_string}/stream/{scrape_type}/{imdb_id}"
         if identifier:
@@ -144,8 +140,8 @@ class Mediafusion:
             torrents[info_hash] = raw_title
 
         if torrents:
-            logger.log("SCRAPER", f"Found {len(torrents)} streams for {item.log_string}")
+            logger.log("SCRAPER", f"Found {len(torrents)} streams for {profile.log_string}")
         else:
-            logger.log("NOT_FOUND", f"No streams found for {item.log_string}")
+            logger.log("NOT_FOUND", f"No streams found for {profile.log_string}")
 
         return torrents

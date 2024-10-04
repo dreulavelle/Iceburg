@@ -29,7 +29,7 @@ class TraktIndexer:
         """Copy attributes from source to target."""
         attributes = ["file", "folder", "update_folder", "symlinked", "is_anime", "symlink_path", "subtitles", "requested_by", "requested_at", "overseerr_id", "active_stream", "requested_id"]
         for attr in attributes:
-            target.set(attr, getattr(source, attr, None))
+            setattr(target, attr, getattr(source, attr, None))
 
     def copy_items(self, itema: MediaItem, itemb: MediaItem):
         """Copy attributes from itema to itemb recursively."""
@@ -48,7 +48,7 @@ class TraktIndexer:
             itemb.set("is_anime", is_anime)
         elif itemb.type == "movie":
             self.copy_attributes(itema, itemb)
-            itemb.set("is_anime", is_anime)
+            itemb.is_anime = is_anime
         else:
             logger.error(f"Item types {itema.type} and {itemb.type} do not match cant copy metadata")
         return itemb
@@ -58,11 +58,11 @@ class TraktIndexer:
         if not in_item:
             logger.error("Item is None")
             return
-        if not (imdb_id := in_item.imdb_id):
+        if not (imdb_id := in_item.ids["imdb_id"]):
             logger.error(f"Item {in_item.log_string} does not have an imdb_id, cannot index it")
             return
 
-        if in_item.imdb_id in self.failed_ids:
+        if in_item.ids["imdb_id"] in self.failed_ids:
             return
 
         item_type = in_item.type if in_item.type != "mediaitem" else None
@@ -74,19 +74,19 @@ class TraktIndexer:
             elif item.type == "movie":
                 pass
             else:
-                logger.error(f"Indexed IMDb Id {item.imdb_id} returned the wrong item type: {item.type}")
-                self.failed_ids.add(in_item.imdb_id)
+                logger.error(f"Indexed IMDb Id {item.ids['imdb_id']} returned the wrong item type: {item.type}")
+                self.failed_ids.add(in_item.ids["imdb_id"])
                 return
         else:
-            logger.error(f"Failed to index item with imdb_id: {in_item.imdb_id}")
-            self.failed_ids.add(in_item.imdb_id)
+            logger.error(f"Failed to index item with imdb_id: {in_item.ids['imdb_id']}")
+            self.failed_ids.add(in_item.ids["imdb_id"])
             return
 
         item = self.copy_items(in_item, item)
         item.indexed_at = datetime.now()
 
         if log_msg: # used for mapping symlinks to database, need to hide this log message
-            logger.debug(f"Indexed IMDb id ({in_item.imdb_id}) as {item.type.title()}: {item.log_string}")
+            logger.debug(f"Indexed IMDb id ({in_item.ids['imdb_id']}) as {item.type.title()}: {item.log_string}")
         yield item
 
     @staticmethod

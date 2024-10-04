@@ -73,7 +73,7 @@ class TorBoxDownloader:
     def run(self, item: MediaItem) -> bool:
         """Download media item from torbox.app"""
         return_value = False
-        stream_count = get_stream_count(item._id)
+        stream_count = get_stream_count(item.id)
         processed_stream_hashes = set()  # Track processed stream hashes
         stream_hashes = {}
     
@@ -82,7 +82,7 @@ class TorBoxDownloader:
     
         for page_number in range(total_pages):
             with db.Session() as session:
-                for stream_id, infohash, stream in load_streams_in_pages(session, item._id, page_number, page_size=number_of_rows_per_page):
+                for stream_id, infohash, stream in load_streams_in_pages(session, item.id, page_number, page_size=number_of_rows_per_page):
                     stream_hash_lower = infohash.lower()
     
                     if stream_hash_lower in processed_stream_hashes:

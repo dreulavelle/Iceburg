@@ -11,14 +11,14 @@ if TYPE_CHECKING:
 
 
 class Subtitle(db.Model):
-    __tablename__ = "Subtitle"
+    __tablename__ = "subtitle"
 
-    _id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     language: Mapped[str] = mapped_column(String)
     file: Mapped[str] = mapped_column(String, nullable=True)
 
-    parent_id: Mapped[int] = mapped_column(Integer, ForeignKey("MediaItem._id", ondelete="CASCADE"))
-    parent: Mapped["MediaItem"] = relationship("MediaItem", back_populates="subtitles")
+    parent_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiledata.id", ondelete="CASCADE"))
+    parent: Mapped["ProfileData"] = relationship("ProfileData", back_populates="subtitles")
 
     __table_args__ = (
         Index('ix_subtitle_language', 'language'),

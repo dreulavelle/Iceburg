@@ -31,7 +31,7 @@ async def _send_json(message: json, websocket: WebSocket):
 
 def send_event_update(events: list):
     event_types = ["Scraping", "Downloader", "Symlinker", "Updater", "PostProcessing"]
-    message = {event_type.lower(): [event.item._id for event in events if event.emitted_by == event_type] for event_type in event_types}
+    message = {event_type.lower(): [event.item.id for event in events if event.emitted_by == event_type] for event_type in event_types}
     broadcast({"type": "event_update", "message": message})
 
 def send_health_update(status: str):

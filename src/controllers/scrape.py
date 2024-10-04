@@ -33,7 +33,7 @@ async def scrape(request: Request, imdb_id: str, season: int = None, episode: in
         with db.Session() as session:
             media_item = session.execute(
                 select(MediaItem).where(
-                    MediaItem.imdb_id == imdb_id,
+                    MediaItem.ids["imdb_id"] == imdb_id,
                     MediaItem.type.in_(["movie", "show"])
                 )
             ).unique().scalar_one_or_none()

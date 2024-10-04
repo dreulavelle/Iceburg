@@ -71,8 +71,8 @@ class PlexWatchlist:
         plex_items: set[str] = set(watchlist_items) | set(rss_items)
         items_to_yield: list[MediaItem] = [MediaItem({"imdb_id": imdb_id, "requested_by": self.key}) for imdb_id in plex_items if imdb_id and imdb_id.startswith("tt")]
         non_existing_items = _filter_existing_items(items_to_yield)
-        new_non_recurring_items = [item for item in non_existing_items if item.imdb_id not in self.recurring_items and isinstance(item, MediaItem)]
-        self.recurring_items.update([item.imdb_id for item in new_non_recurring_items])
+        new_non_recurring_items = [item for item in non_existing_items if item.ids["imdb_id"] not in self.recurring_items and isinstance(item, MediaItem)]
+        self.recurring_items.update([item.ids["imdb_id"] for item in new_non_recurring_items])
 
         if new_non_recurring_items:
             logger.info(f"Found {len(new_non_recurring_items)} new items to fetch")

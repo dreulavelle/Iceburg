@@ -4,7 +4,7 @@ from typing import Dict
 from requests import ConnectTimeout, ReadTimeout
 from requests.exceptions import RequestException
 
-from program.media.item import MediaItem
+from program.media.item import ProfileData
 from program.settings.manager import settings_manager
 from program.scrapers.shared import _get_stremio_identifier
 from utils.logger import logger
@@ -55,21 +55,21 @@ class Annatar:
             logger.error(f"Annatar failed to initialize: {e}")
             return False
 
-    def run(self, item: MediaItem) -> Dict[str, str]:
+    def run(self, profile: ProfileData) -> Dict[str, str]:
         """Scrape the Annatar site for the given media items
         and update the object with scraped streams"""
         try:
-            return self.scrape(item)
+            return self.scrape(profile)
         except RateLimitExceeded:
             if self.second_limiter:
                 self.second_limiter.limit_hit()
         except ConnectTimeout:
-            logger.debug(f"Annatar connection timeout for item: {item.log_string}")
+            logger.debug(f"Annatar connection timeout for item: {profile.log_string}")
         except ReadTimeout:
-            logger.debug(f"Annatar read timeout for item: {item.log_string}")
+            logger.debug(f"Annatar read timeout for item: {profile.log_string}")
         except RequestException as e:
             if e.response.status_code == 525:
-                logger.error(f"Annatar SSL handshake failed for item: {item.log_string}")
+                logger.error(f"Annatar SSL handshake failed for item: {profile.log_string}")
             elif e.response.status_code == 429:
                 if self.second_limiter:
                     self.second_limiter.limit_hit()
@@ -79,18 +79,9 @@ class Annatar:
             logger.error(f"Annatar failed to scrape item with error: {e}", exc_info=True)
         return {}
 
-    def scrape(self, item: MediaItem) -> Dict[str, str]:
-        """Scrape the given media item"""
-        data, stream_count = self.api_scrape(item)
-        if data:
-            logger.log("SCRAPER", f"Found {len(data)} streams out of {stream_count} for {item.log_string}")
-        else:
-            logger.log("NOT_FOUND", f"No streams found for {item.log_string}")
-        return data
-
-    def api_scrape(self, item: MediaItem) -> tuple[Dict[str, str], int]:
+    def scrape(self, profile: ProfileData) -> Dict[str, str]:
         """Wrapper for `Annatar` scrape method"""
-        identifier, scrape_type, imdb_id = _get_stremio_identifier(item)
+        identifier, scrape_type, imdb_id = _get_stremio_identifier(profile)
 
         if identifier is not None:
             url = f"{self.settings.url}/search/imdb/{scrape_type}/{imdb_id}?{identifier}&{self.query_limits}"
@@ -104,13 +95,17 @@ class Annatar:
             response = get(url, timeout=self.timeout)
 
         if not response.is_ok or not response.data.media:
-            return {}, 0
+            return {}
 
         torrents: Dict[str, str] = {}
         for stream in response.data.media:
             if not stream.hash:
                 continue
-
             torrents[stream.hash] = stream.title
 
-        return torrents, len(response.data.media)
+        if torrents:
+            logger.log("SCRAPER", f"Found {len(torrents)} streams for {profile.log_string}")
+        else:
+            logger.log("NOT_FOUND", f"No streams found for {profile.log_string}")
+
+        return torrents

@@ -68,8 +68,8 @@ class Listrr:
 
         listrr_items = movie_items + show_items
         non_existing_items = _filter_existing_items(listrr_items)
-        new_non_recurring_items = [item for item in non_existing_items if item.imdb_id not in self.recurring_items]
-        self.recurring_items.update([item.imdb_id for item in new_non_recurring_items])
+        new_non_recurring_items = [item for item in non_existing_items if item.ids["imdb_id"] not in self.recurring_items]
+        self.recurring_items.update([item.ids["imdb_id"] for item in new_non_recurring_items])
 
         if new_non_recurring_items:
             logger.info(f"Fetched {len(new_non_recurring_items)} new items from Listrr")

@@ -1,13 +1,10 @@
 """ Torrentio scraper module """
 from typing import Dict
 
-from requests import ConnectTimeout, ReadTimeout
-from requests.exceptions import RequestException
-
-from program.media.item import MediaItem
+from program.media.item import ProfileData
+from program.scrapers.shared import _get_stremio_identifier
 from program.settings.manager import settings_manager
 from program.settings.models import TorrentioConfig
-from program.scrapers.shared import _get_stremio_identifier
 from utils.logger import logger
 from utils.ratelimiter import RateLimiter, RateLimitExceeded
 from utils.request import get, ping
@@ -46,19 +43,19 @@ class Torrentio:
             return False
         return True
 
-    def run(self, item: MediaItem) -> Dict[str, str]:
+    def run(self, profile: ProfileData) -> Dict[str, str]:
         """Scrape Torrentio with the given media item for streams"""
         try:
-            return self.scrape(item)
+            return self.scrape(profile)
         except RateLimitExceeded:
             self.rate_limiter.limit_hit()
         except Exception as e:
             logger.error(f"Torrentio exception thrown: {str(e)}")
         return {}
 
-    def scrape(self, item: MediaItem) -> tuple[Dict[str, str], int]:
+    def scrape(self, profile: ProfileData) -> Dict[str, str]:
         """Wrapper for `Torrentio` scrape method"""
-        identifier, scrape_type, imdb_id = _get_stremio_identifier(item)
+        identifier, scrape_type, imdb_id = _get_stremio_identifier(profile)
         if not imdb_id:
             return {}
 
@@ -80,8 +77,8 @@ class Torrentio:
             torrents[stream.infoHash] = raw_title
 
         if torrents:
-            logger.log("SCRAPER", f"Found {len(torrents)} streams for {item.log_string}")
+            logger.log("SCRAPER", f"Found {len(torrents)} streams for {profile.log_string}")
         else:
-            logger.log("NOT_FOUND", f"No streams found for {item.log_string}")
+            logger.log("NOT_FOUND", f"No streams found for {profile.log_string}")
 
         return torrents

@@ -97,10 +97,10 @@ class TraktContent:
         new_non_recurring_items = [
             item
             for item in non_existing_items
-            if item.imdb_id not in self.recurring_items
+            if item.ids["imdb_id"] not in self.recurring_items
             and isinstance(item, MediaItem)
         ]
-        self.recurring_items.update(item.imdb_id for item in new_non_recurring_items)
+        self.recurring_items.update(item.ids["imdb_id"] for item in new_non_recurring_items)
 
         if new_non_recurring_items:
             logger.log("TRAKT", f"Found {len(new_non_recurring_items)} new items to fetch")

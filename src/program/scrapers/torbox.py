@@ -1,9 +1,9 @@
 from typing import Dict
 
 from requests import RequestException
-from requests.exceptions import ConnectTimeout, ReadTimeout, RetryError
+from requests.exceptions import ConnectTimeout
 
-from program.media.item import Episode, MediaItem, Movie, Season, Show
+from program.media.item import ProfileData
 from program.settings.manager import settings_manager
 from utils.logger import logger
 from utils.ratelimiter import RateLimiter, RateLimitExceeded
@@ -37,37 +37,37 @@ class TorBoxScraper:
             logger.exception(f"Error validating TorBox Scraper: {e}")
             return False
 
-    def run(self, item: MediaItem) -> Dict[str, str]:
+    def run(self, profile: ProfileData) -> Dict[str, str]:
         """Scrape Torbox with the given media item for streams"""
         try:
-            return self.scrape(item)
+            return self.scrape(profile)
         except RateLimitExceeded:
             self.rate_limiter.limit_hit()
         except ConnectTimeout:
-            logger.log("NOT_FOUND", f"TorBox is caching request for {item.log_string}, will retry later")
+            logger.log("NOT_FOUND", f"TorBox is caching request for {profile.log_string}, will retry later")
         except RequestException as e:
             if e.response and e.response.status_code == 418:
-                logger.log("NOT_FOUND", f"TorBox has no metadata for item: {item.log_string}, unable to scrape")
+                logger.log("NOT_FOUND", f"TorBox has no metadata for item: {profile.log_string}, unable to scrape")
             elif e.response and e.response.status_code == 500:
-                logger.log("NOT_FOUND", f"TorBox is caching request for {item.log_string}, will retry later")
+                logger.log("NOT_FOUND", f"TorBox is caching request for {profile.log_string}, will retry later")
         except Exception as e:
             logger.error(f"TorBox exception thrown: {e}")
         return {}
 
-    def _build_query_params(self, item: MediaItem) -> str:
+    def _build_query_params(self, profile: ProfileData) -> str:
         """Build the query params for the TorBox API"""
-        params = [f"imdb:{item.imdb_id}"]
-        if item.type == "show":
+        params = [f"imdb:{profile.parent.ids['imdb_id']}"]
+        if profile.parent.type == "show":
             params.append(f"season=1")
-        elif item.type == "season":
-            params.append(f"season={item.number}")
-        elif item.type == "episode":
-            params.append(f"season={item.parent.number}&episode={item.number}")
+        elif profile.parent.type == "season":
+            params.append(f"season={profile.parent.number}")
+        elif profile.parent.type == "episode":
+            params.append(f"season={profile.parent.parent.number}&episode={profile.parent.number}")
         return "&".join(params)
 
-    def scrape(self, item: MediaItem) -> tuple[Dict[str, str], int]:
+    def scrape(self, profile: ProfileData) -> Dict[str, str]:
         """Wrapper for `Torbox` scrape method using Torbox API"""
-        query_params = self._build_query_params(item)
+        query_params = self._build_query_params(profile)
         url = f"{self.base_url}/torrents/{query_params}?metadata=false"
 
         response = get(url, timeout=self.timeout, specific_rate_limiter=self.rate_limiter)
@@ -84,8 +84,8 @@ class TorBoxScraper:
             torrents[info_hash] = raw_title
 
         if torrents:
-            logger.log("SCRAPER", f"Found {len(torrents)} streams for {item.log_string}")
+            logger.log("SCRAPER", f"Found {len(torrents)} streams for {profile.log_string}")
         else:
-            logger.log("NOT_FOUND", f"No streams found for {item.log_string}")
+            logger.log("NOT_FOUND", f"No streams found for {profile.log_string}")
 
         return torrents

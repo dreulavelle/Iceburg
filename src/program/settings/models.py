@@ -351,6 +351,18 @@ class SubliminalConfig(Observable):
         }
     }
 
+class RivenSettingsModel(SettingsModel):
+    def to_dict(self):
+        return {
+            "profile": self.profile,
+            "require": self.require,
+            "resolutions": self.resolutions,
+            "options": self.options,
+            "languages": self.languages,
+            # "custom_ranks": self.custom_ranks
+        }
+
+
 class PostProcessing(Observable):
     subliminal: SubliminalConfig = SubliminalConfig()
 
@@ -366,7 +378,7 @@ class AppModel(Observable):
     downloaders: DownloadersModel = DownloadersModel()
     content: ContentModel = ContentModel()
     scraping: ScraperModel = ScraperModel()
-    ranking: RTNSettingsModel = RTNSettingsModel()
+    ranking: RivenSettingsModel = RivenSettingsModel()
     indexer: IndexerModel = IndexerModel()
     database: DatabaseModel = DatabaseModel()
     notifications: NotificationsModel = NotificationsModel()

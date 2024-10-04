@@ -304,9 +304,9 @@ def get_items_from_filepath(session: Session, filepath: str) -> list["Movie"] | 
             for ep_num in episode_numbers:
                 query = (
                     session.query(Episode)
-                    .join(Season, Episode.parent_id == Season._id)
-                    .join(Show, Season.parent_id == Show._id)
-                    .filter(Show.imdb_id == imdb_id, Season.number == season_number, Episode.number == ep_num)
+                    .join(Season, Episode.parent_id == Season.id)
+                    .join(Show, Season.parent_id == Show.id)
+                    .filter(Show.ids["imdb_id"] == imdb_id, Season.number == season_number, Episode.number == ep_num)
                 )
                 episode_item = query.with_entities(Episode).first()
                 if episode_item:

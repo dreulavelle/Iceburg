@@ -36,6 +36,7 @@ subliminal = "^2.2.1"
 rank-torrent-name = "^1.0.2"
 jsonschema = "^4.23.0"
 scalar-fastapi = "^1.0.3"
+sqlmodel = "^0.0.22"
 
 [tool.poetry.group.dev.dependencies]
 pyright = "^1.1.352"

@@ -15,7 +15,7 @@ from program.downloaders import Downloader
 from program.indexers.trakt import TraktIndexer
 from program.libraries import SymlinkLibrary
 from program.libraries.symlink import fix_broken_symlinks
-from program.media.item import Episode, MediaItem, Movie, Season, Show
+from program.media.item import MediaItem, Movie, Profile, Show
 from program.media.state import States
 from program.post_processing import PostProcessing
 from program.scrapers import Scraping
@@ -141,26 +141,11 @@ class Program(threading.Thread):
         run_migrations()
         self._init_db_from_symlinks()
 
-        with db.Session() as session:
-            movies_symlinks = session.execute(select(func.count(Movie._id)).where(Movie.symlinked == True)).scalar_one() # noqa
-            episodes_symlinks = session.execute(select(func.count(Episode._id)).where(Episode.symlinked == True)).scalar_one() # noqa
-            total_symlinks = movies_symlinks + episodes_symlinks
-            total_movies = session.execute(select(func.count(Movie._id))).scalar_one()
-            total_shows = session.execute(select(func.count(Show._id))).scalar_one()
-            total_seasons = session.execute(select(func.count(Season._id))).scalar_one()
-            total_episodes = session.execute(select(func.count(Episode._id))).scalar_one()
-            total_items = session.execute(select(func.count(MediaItem._id))).scalar_one()
-
-            logger.log("ITEM", f"Movies: {total_movies} (Symlinks: {movies_symlinks})")
-            logger.log("ITEM", f"Shows: {total_shows}")
-            logger.log("ITEM", f"Seasons: {total_seasons}")
-            logger.log("ITEM", f"Episodes: {total_episodes} (Symlinks: {episodes_symlinks})")
-            logger.log("ITEM", f"Total Items: {total_items} (Symlinks: {total_symlinks})")
-
         self.executors = []
         self.scheduler = BackgroundScheduler()
+        self.initialize_db()
         self._schedule_services()
-        self._schedule_functions()
+        # self._schedule_functions()
 
         super().start()
         self.scheduler.start()
@@ -172,7 +157,7 @@ class Program(threading.Thread):
         count = 0
         with db.Session() as session:
             count = session.execute(
-                select(func.count(MediaItem._id))
+                select(func.count(MediaItem.id))
                 .where(MediaItem.last_state.not_in([States.Completed, States.Unreleased]))
                 .where(MediaItem.type.in_(["movie", "show"]))
             ).scalar_one()
@@ -300,14 +285,14 @@ class Program(threading.Thread):
 
             with db.Session() as session:
                 existing_item: MediaItem | None = DB._get_item_from_db(session, event.item)
-                processed_item, next_service, items_to_submit = process_event(
+                processed_item, items_to_submit = process_event(
                     existing_item, event.emitted_by, existing_item if existing_item is not None else event.item
                 )
 
                 self.em.remove_item_from_running(event.item)
 
                 if items_to_submit:
-                    for item_to_submit in items_to_submit:
+                    for item_to_submit, next_service in items_to_submit:
                         if not next_service:
                             self.em.add_event_to_queue(Event("StateTransition", item_to_submit))
                         else:
@@ -330,6 +315,13 @@ class Program(threading.Thread):
             self.scheduler.shutdown(wait=False)
         logger.log("PROGRAM", "Riven has been stopped.")
 
+    def initialize_db(self):
+        with db.Session() as session:
+            existing = session.query(Profile).filter(Profile.name == settings_manager.settings.ranking.profile).first()
+            if not existing:
+                session.add(Profile(settings_manager.settings.ranking))
+                session.commit()
+
     def _enhance_item(self, item: MediaItem) -> MediaItem | None:
         try:
             enhanced_item = next(self.services[TraktIndexer].run(item, log_msg=False))
@@ -342,7 +334,7 @@ class Program(threading.Thread):
         """Initialize the database from symlinks."""
         start_time = datetime.now()
         with db.Session() as session:
-            res = session.execute(select(func.count(MediaItem._id))).scalar_one()
+            res = session.execute(select(func.count(MediaItem.id))).scalar_one()
             added = []
             errors = []
             if res == 0:
@@ -368,7 +360,7 @@ class Program(threading.Thread):
                                             added.append(enhanced_item.item_id)
                                             enhanced_item.store_state()
                                             session.add(enhanced_item)
-                                            log_message = f"Indexed IMDb Id: {enhanced_item.imdb_id} as {enhanced_item.type.title()}: {enhanced_item.log_string}"
+                                            log_message = f"Indexed IMDb Id: {enhanced_item.ids['imdb_id']} as {enhanced_item.type.title()}: {enhanced_item.log_string}"
                                 except Exception as e:
                                     logger.exception(f"Error processing {item.log_string}: {e}")
                                 finally:

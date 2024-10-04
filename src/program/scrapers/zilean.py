@@ -2,12 +2,8 @@
 
 from typing import Dict
 
-from requests import ConnectTimeout, ReadTimeout
-from requests.exceptions import RequestException
-
-from program.media.item import Episode, MediaItem, Season, Show
+from program.media.item import ProfileData
 from program.settings.manager import settings_manager
-from program.settings.models import AppModel
 from utils.logger import logger
 from utils.ratelimiter import RateLimiter, RateLimitExceeded
 from utils.request import get, ping
@@ -45,34 +41,34 @@ class Zilean:
             logger.error(f"Zilean failed to initialize: {e}")
             return False
 
-    def run(self, item: MediaItem) -> Dict[str, str]:
+    def run(self, data: ProfileData) -> Dict[str, str]:
         """Scrape the Zilean site for the given media items and update the object with scraped items"""
         try:
-            return self.scrape(item)
+            return self.scrape(data)
         except RateLimitExceeded:
             self.rate_limiter.limit_hit()
         except Exception as e:
             logger.error(f"Zilean exception thrown: {e}")
         return {}
 
-    def _build_query_params(self, item: MediaItem) -> Dict[str, str]:
+    def _build_query_params(self, data: ProfileData) -> Dict[str, str]:
         """Build the query params for the Zilean API"""
-        params = {"Query": item.get_top_title()}
-        if isinstance(item, MediaItem) and hasattr(item, "year"):
-            params["Year"] = item.year
-        if isinstance(item, Show):
+        params = {"Query": data.get_top_title()}
+        if hasattr(data.parent, "aired_at"):
+            params["Year"] = data.parent.aired_at.year
+        if data.parent.type == "show":
             params["Season"] = 1
-        elif isinstance(item, Season):
-            params["Season"] = item.number
-        elif isinstance(item, Episode):
-            params["Season"] = item.parent.number
-            params["Episode"] = item.number
+        elif data.parent.type == "season":
+            params["Season"] = data.parent.number
+        elif data.parent.type == "episode":
+            params["Season"] = data.parent.parent.number
+            params["Episode"] = data.parent.number
         return params
 
-    def scrape(self, item: MediaItem) -> Dict[str, str]:
+    def scrape(self, data: ProfileData) -> Dict[str, str]:
         """Wrapper for `Zilean` scrape method"""
         url = f"{self.settings.url}/dmm/filtered"
-        params = self._build_query_params(item)
+        params = self._build_query_params(data)
 
         response = get(url, params=params, timeout=self.timeout, specific_rate_limiter=self.rate_limiter)
         if not response.is_ok or not response.data:
@@ -85,8 +81,8 @@ class Zilean:
             torrents[result.info_hash] = result.raw_title
 
         if torrents:
-            logger.log("SCRAPER", f"Found {len(torrents)} streams for {item.log_string}")
+            logger.log("SCRAPER", f"Found {len(torrents)} streams for {data.log_string}")
         else:
-            logger.log("NOT_FOUND", f"No streams found for {item.log_string}")
+            logger.log("NOT_FOUND", f"No streams found for {data.log_string}")
 
         return torrents
