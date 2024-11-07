@@ -73,4 +73,6 @@ def process_event(emitted_by: Service, existing_item: MediaItem | None = None, c
         else:
             return no_further_processing
 
+    items_to_submit = list(set(items_to_submit))
+
     return next_service, items_to_submit

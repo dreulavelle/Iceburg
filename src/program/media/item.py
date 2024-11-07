@@ -442,6 +442,8 @@ class Show(MediaItem):
         return None
 
     def _determine_state(self):
+        if len(self.seasons) == 0:
+            return States.Unknown
         if all(season.state == States.Completed for season in self.seasons):
             return States.Completed
         if any(season.state in [States.Ongoing, States.Unreleased] for season in self.seasons):
