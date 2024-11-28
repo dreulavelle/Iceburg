@@ -91,7 +91,7 @@ class Symlinker:
             if item.symlinked_times == 5:
                 logger.debug(f"Soft resetting {item.log_string} because required files were not found")
                 item.blacklist_active_stream()
-                item.reset()
+                item.reset(reset_streams=False)
                 yield item
             next_attempt = self._calculate_next_attempt(item)
             logger.debug(f"Waiting for {item.log_string} to become available, next attempt in {round((next_attempt - datetime.now()).total_seconds())} seconds")
@@ -300,16 +300,22 @@ def _get_item_path(item: Union[Movie, Episode]) -> Optional[Path]:
 
     rclone_path = Path(settings_manager.settings.symlink.rclone_path)
     possible_folders = [item.folder, item.file, item.alternative_folder]
+    possible_folders = [folder for folder in possible_folders if folder] # Get rid of nonetypes
     possible_folders_without_duplicates = list(set(possible_folders))
     if len(possible_folders_without_duplicates) == 1:
         new_possible_folder = Path(possible_folders_without_duplicates[0]).with_suffix("")
         possible_folders_without_duplicates.append(new_possible_folder)
 
     for folder in possible_folders_without_duplicates:
-        if folder:
-            file_path = rclone_path / folder / item.file
+        folder_path = Path(rclone_path / folder)
+        if folder_path.exists():
+            file_path = folder_path / item.file
             if file_path.exists():
                 return file_path
+            else:
+                # Lets glob it.
+                for file_path in folder_path.rglob(item.file):
+                    return file_path
 
     # Not in a folder? Perhaps it's just sitting in the root.
     file = rclone_path / item.file

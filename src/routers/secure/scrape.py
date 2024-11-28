@@ -14,7 +14,7 @@ from program.db import db_functions
 from program.db.db import db
 from program.media.item import Episode, MediaItem
 from program.media.stream import Stream as ItemStream
-from program.services.downloaders import Downloader
+from program.services.downloaders.downloader import Downloader
 from program.services.indexers.trakt import TraktIndexer
 from program.services.scrapers import Scraping
 from program.services.scrapers.shared import rtn

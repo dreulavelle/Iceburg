@@ -62,6 +62,7 @@ class DownloadersModel(Observable):
     episode_filesize_mb_min: int = 0  # MB
     episode_filesize_mb_max: int = -1  # MB (-1 is no limit)
     proxy_url: str = ""
+    uncached_after: int = 5
     real_debrid: RealDebridModel = RealDebridModel()
     all_debrid: AllDebridModel = AllDebridModel()
     torbox: TorboxModel = TorboxModel()

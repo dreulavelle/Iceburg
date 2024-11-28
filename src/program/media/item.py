@@ -1,22 +1,48 @@
 """MediaItem class"""
 from datetime import datetime
-from enum import Enum
+import json
 from pathlib import Path
-from typing import List, Optional, Self
+from typing import List, Optional, Self, Type
 
+from pydantic import BaseModel
 import sqlalchemy
 from loguru import logger
 from RTN import parse
-from sqlalchemy import Index
+from sqlalchemy import JSON, Index, TypeDecorator
 from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 
 from program.db.db import db
 from program.managers.sse_manager import sse_manager
 from program.media.state import States
 from program.media.subtitle import Subtitle
+from program.services.downloaders.models import DownloadedTorrent
 
-from ..db.db_functions import blacklist_stream, reset_streams
+from ..db.db_functions import blacklist_stream, reset_streams as db_reset_streams
 from .stream import Stream
+
+class PydanticType(TypeDecorator):
+    """Custom SQLAlchemy type for Pydantic models"""
+
+    impl = JSON
+    cache_ok = True
+
+    def __init__(self, pydantic_model: Type[BaseModel], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pydantic_model = pydantic_model
+
+    def process_bind_param(self, value, dialect):
+        """Convert Pydantic model to JSON when saving to DB"""
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return value
+        return value.model_dump(mode="json")
+
+    def process_result_value(self, value, dialect):
+        """Convert JSON to Pydantic model when loading from DB"""
+        if value is None:
+            return None
+        return self.pydantic_model.model_validate(value)
 
 
 class MediaItem(db.Model):
@@ -34,7 +60,7 @@ class MediaItem(db.Model):
     indexed_at: Mapped[Optional[datetime]] = mapped_column(sqlalchemy.DateTime, nullable=True)
     scraped_at: Mapped[Optional[datetime]] = mapped_column(sqlalchemy.DateTime, nullable=True)
     scraped_times: Mapped[Optional[int]] = mapped_column(sqlalchemy.Integer, default=0)
-    active_stream: Mapped[Optional[dict]] = mapped_column(sqlalchemy.JSON, nullable=True)
+    active_stream: Mapped[DownloadedTorrent] = mapped_column(PydanticType(DownloadedTorrent))
     streams: Mapped[list[Stream]] = relationship(secondary="StreamRelation", back_populates="parents", lazy="selectin", cascade="all")
     blacklisted_streams: Mapped[list[Stream]] = relationship(secondary="StreamBlacklistRelation", back_populates="blacklisted_parents", lazy="selectin", cascade="all")
     symlinked: Mapped[Optional[bool]] = mapped_column(sqlalchemy.Boolean, default=False)
@@ -95,7 +121,7 @@ class MediaItem(db.Model):
 
         self.scraped_at  = None
         self.scraped_times = 0
-        self.active_stream = item.get("active_stream", {})
+        self.active_stream = DownloadedTorrent()
         self.streams: List[Stream] = []
         self.blacklisted_streams: List[Stream] = []
 
@@ -159,9 +185,10 @@ class MediaItem(db.Model):
         return stream in self.blacklisted_streams
 
     def blacklist_active_stream(self):
-        stream = next((stream for stream in self.streams if stream.infohash == self.active_stream.get("infohash", None)), None)
-        if stream:
-            self.blacklist_stream(stream)
+        if self.active_stream.infohash:
+            stream = next((stream for stream in self.streams if stream.infohash == self.active_stream.infohash), None)
+            if stream:
+                self.blacklist_stream(stream)
         else:
             logger.debug(f"No active stream for {self.log_string}, will not blacklist")
 
@@ -189,6 +216,8 @@ class MediaItem(db.Model):
             return States.Symlinked
         elif self.file and self.folder:
             return States.Downloaded
+        elif self.active_stream.infohash:
+            return States.Downloading
         elif self.is_scraped():
             return States.Scraped
         elif self.title and self.is_released:
@@ -263,11 +292,9 @@ class MediaItem(db.Model):
         dict["country"] = self.country if hasattr(self, "country") else None
         dict["network"] = self.network if hasattr(self, "network") else None
         if with_streams:
-            dict["streams"] = getattr(self, "streams", [])
-            dict["blacklisted_streams"] = getattr(self, "blacklisted_streams", [])
-            dict["active_stream"] = (
-                self.active_stream if hasattr(self, "active_stream") else None
-            )
+            dict["streams"] = [stream.infohash for stream in self.streams]
+            dict["blacklisted_streams"] = [stream.infohash for stream in self.blacklisted_streams]
+            dict["active_stream"] = self.active_stream.model_dump_json()
         dict["number"] = self.number if hasattr(self, "number") else None
         dict["symlinked"] = self.symlinked if hasattr(self, "symlinked") else None
         dict["symlinked_at"] = (
@@ -340,23 +367,20 @@ class MediaItem(db.Model):
     def __hash__(self):
         return hash(self.id)
 
-    def reset(self):
+    def reset(self, reset_streams=True):
         """Reset item attributes."""
         if self.type == "show":
             for season in self.seasons:
                 for episode in season.episodes:
-                    episode._reset()
-                season._reset()
+                    episode._reset(reset_streams)
+                season._reset(reset_streams)
         elif self.type == "season":
             for episode in self.episodes:
-                episode._reset()
-        self._reset()
-        if self.title:
-            self.store_state(States.Indexed)
-        else:
-            self.store_state(States.Requested)
+                episode._reset(reset_streams)
+        self._reset(reset_streams)
+        self.store_state()
 
-    def _reset(self):
+    def _reset(self, reset_streams=True):
         """Reset item attributes for rescraping."""
         if self.symlink_path:
             if Path(self.symlink_path).exists():
@@ -373,10 +397,10 @@ class MediaItem(db.Model):
         self.set("folder", None)
         self.set("alternative_folder", None)
 
-        reset_streams(self)
-        self.active_stream = {}
+        if reset_streams:
+            db_reset_streams(self)
 
-        self.set("active_stream", {})
+        self.active_stream = DownloadedTorrent()
         self.set("symlinked", False)
         self.set("symlinked_at", None)
         self.set("update_folder", None)
@@ -459,6 +483,8 @@ class Show(MediaItem):
             return States.Symlinked
         if any(season.state == States.Downloaded for season in self.seasons):
             return States.Downloaded
+        elif self.active_stream.infohash:
+            return States.Downloading
         if self.is_scraped():
             return States.Scraped
         if any(season.state == States.Indexed for season in self.seasons):
@@ -567,6 +593,8 @@ class Season(MediaItem):
                 return States.Symlinked
             if any(episode.file and episode.folder for episode in self.episodes):
                 return States.Downloaded
+            if self.active_stream.infohash:
+                return States.Downloading
             if self.is_scraped():
                 return States.Scraped
             if any(episode.state == States.Indexed for episode in self.episodes):

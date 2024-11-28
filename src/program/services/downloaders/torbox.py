@@ -72,6 +72,7 @@ class TorBoxDownloader(DownloaderBase):
         self.key = "torbox"
         self.settings = settings_manager.settings.downloaders.torbox
         self.api = None
+        self.concurrent_download_limit = 1 # Hardcoded 1 for now...
         self.initialized = self.validate()
 
     def validate(self) -> bool:
@@ -135,7 +136,7 @@ class TorBoxDownloader(DownloaderBase):
                     debrid_file = DebridFile.create(file["name"], file["size"], item_type)
                     if debrid_file:
                         files.append(debrid_file)
-                
+
                 if files:
                     return TorrentContainer(
                         infohash=torrent["hash"],
@@ -171,7 +172,7 @@ class TorBoxDownloader(DownloaderBase):
         """Select files from a torrent"""
         pass
 
-    def get_torrent_info(self, torrent_id: str) -> TorrentInfo:
+    def get_torrent_info(self, torrent_id: str, _ = None) -> TorrentInfo:
         """Get information about a torrent using a torrent ID"""
         try:
             data = self.api.request_handler.execute(HttpMethod.GET, f"torrents/mylist?id={torrent_id}", timeout=15)['data']

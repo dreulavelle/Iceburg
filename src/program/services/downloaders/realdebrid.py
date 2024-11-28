@@ -21,6 +21,7 @@ from program.utils.request import (
     create_service_session,
     get_rate_limit_params,
 )
+from program.services.downloaders.models import DebridFile, DownloadStatus, TorrentContainer, TorrentInfo
 
 from .shared import DownloaderBase, premium_days_left
 
@@ -37,19 +38,6 @@ class RDTorrentStatus(str, Enum):
     DEAD = "dead"
     UPLOADING = "uploading"
     COMPRESSING = "compressing"
-
-class RDTorrent(BaseModel):
-    """Real-Debrid torrent model"""
-    id: str
-    hash: str
-    filename: str
-    bytes: int
-    status: RDTorrentStatus
-    added: datetime
-    links: List[str]
-    ended: Optional[datetime] = None
-    speed: Optional[int] = None
-    seeders: Optional[int] = None
 
 class RealDebridError(Exception):
     """Base exception for Real-Debrid related errors"""
@@ -86,6 +74,7 @@ class RealDebridDownloader(DownloaderBase):
         self.key = "realdebrid"
         self.settings = settings_manager.settings.downloaders.real_debrid
         self.api = None
+        self.concurrent_download_limit = 5
         self.initialized = self.validate()
 
     def validate(self) -> bool:
@@ -152,41 +141,18 @@ class RealDebridDownloader(DownloaderBase):
 
     def _process_torrent(self, torrent_id: str, infohash: str, item_type: str) -> Optional[TorrentContainer]:
         """Process a single torrent and return a TorrentContainer if valid."""
-        torrent_info = self.get_torrent_info(torrent_id)
-        
-        if torrent_info.status == "waiting_files_selection":
-            video_file_ids = [
-                file_id for file_id, file_info in torrent_info.files.items()
-                if file_info["filename"].endswith(tuple(ext.lower() for ext in VIDEO_EXTENSIONS))
-            ]
+        torrent_info = self.get_torrent_info(torrent_id, item_type)
 
-            if not video_file_ids:
-                logger.debug(f"No video files found in torrent {torrent_id} with infohash {infohash}")
-                return None
+        if torrent_info.status == DownloadStatus.WAITING_FOR_USER:
 
-            self.select_files(torrent_id, video_file_ids)
-            torrent_info = self.get_torrent_info(torrent_id)
+            self.select_files(torrent_id, [file.file_id for file in torrent_info.files])
+            torrent_info = self.get_torrent_info(torrent_id, item_type)
 
-            if torrent_info.status != "downloaded":
+            if torrent_info.status != DownloadStatus.READY:
                 logger.debug(f"Torrent {torrent_id} with infohash {infohash} is not cached")
                 return None
 
-        if not torrent_info.files:
-            return None
-
-        torrent_files = [
-            file for file in (
-                DebridFile.create(
-                    file_info["filename"],
-                    file_info["bytes"],
-                    item_type,
-                    file_id
-                )
-                for file_id, file_info in torrent_info.files.items()
-            ) if file is not None
-        ]
-
-        return TorrentContainer(infohash=infohash, files=torrent_files) if torrent_files else None
+        return TorrentContainer(infohash=infohash, files=torrent_info.files)
 
     def add_torrent(self, infohash: str) -> str:
         """Add a torrent by infohash"""
@@ -216,22 +182,41 @@ class RealDebridDownloader(DownloaderBase):
             logger.error(f"Failed to select files for torrent {torrent_id}: {e}")
             raise
 
-    def get_torrent_info(self, torrent_id: str) -> TorrentInfo:
+    def _status_to_enum(self, status):
+        if status == RDTorrentStatus.MAGNET_CONVERSION:
+            return DownloadStatus.QUEUE
+        if status == RDTorrentStatus.WAITING_FILES:
+            return DownloadStatus.WAITING_FOR_USER
+        elif status in [RDTorrentStatus.DOWNLOADING, RDTorrentStatus.UPLOADING, RDTorrentStatus.COMPRESSING]:
+            return DownloadStatus.DOWNLOADING
+        elif status in [RDTorrentStatus.DOWNLOADED, RDTorrentStatus.SEEDING]:
+            return DownloadStatus.READY
+        else:
+            return DownloadStatus.ERROR
+
+    def get_torrent_info(self, torrent_id: str, item_type: str) -> TorrentInfo:
         """Get information about a torrent"""
         try:
             data = self.api.request_handler.execute(HttpMethod.GET, f"torrents/info/{torrent_id}")
-            files = {file["id"]: {"filename": file["path"].split("/")[-1], "bytes": file["bytes"]} for file in data["files"]}
-            return TorrentInfo(
+            return_value = TorrentInfo(
                 id=data["id"],
                 name=data["filename"],
-                status=data["status"],
+                status=self._status_to_enum(data["status"]),
                 infohash=data["hash"],
                 bytes=data["bytes"],
                 created_at=data["added"],
                 alternative_filename=data.get("original_filename", None),
                 progress=data.get("progress", None),
-                files=files,
             )
+            for file in data["files"]:
+                _file = DebridFile.create(
+                    filename = file["path"].split("/")[-1],
+                    filesize_bytes=file["bytes"],
+                    file_id=file["id"],
+                    filetype = item_type)
+                if _file:
+                    return_value.files.append(_file)
+            return return_value
         except Exception as e:
             logger.error(f"Failed to get torrent info for {torrent_id}: {e}")
             raise

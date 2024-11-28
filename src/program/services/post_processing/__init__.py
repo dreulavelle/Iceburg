@@ -4,7 +4,7 @@ from loguru import logger
 from subliminal import Movie
 
 from program.db.db import db
-from program.db.db_functions import clear_streams
+from program.db.db_functions import reset_streams
 from program.media.item import MediaItem, Movie, Show
 from program.media.state import States
 from program.services.post_processing.subliminal import Subliminal
@@ -26,7 +26,7 @@ class PostProcessing:
         if Subliminal.should_submit(item):
             self.services[Subliminal].run(item)
         if item.last_state == States.Completed:
-            clear_streams(item)
+            reset_streams(item)
         yield item
 
 def notify(item: MediaItem):

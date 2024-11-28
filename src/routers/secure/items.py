@@ -271,7 +271,6 @@ async def reset_items(request: Request, ids: str) -> ResetResponse:
         for media_item in db_functions.get_items_by_ids(ids):
             try:
                 request.app.program.em.cancel_job(media_item.id)
-                db_functions.clear_streams(media_item)
                 db_functions.reset_media_item(media_item)
             except ValueError as e:
                 logger.error(f"Failed to reset item with id {media_item.id}: {str(e)}")

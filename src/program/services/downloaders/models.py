@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Dict, List, Literal, Optional, Union
-
-from loguru import logger
-from pydantic import BaseModel, Field
+from enum import IntEnum
+from typing import List, Literal, Optional, Union
+from pydantic import BaseModel, ConfigDict, Field
+from program.settings.manager import settings_manager
 
 from program.settings.manager import settings_manager
 
@@ -39,6 +39,12 @@ class NotCachedException(Exception):
 class NoMatchingFilesException(Exception):
     """Exception raised for torrents that do not match the expected files"""
 
+class DownloadStatus(IntEnum):
+    QUEUE            = 0
+    DOWNLOADING      = 1
+    READY            = 2
+    ERROR            = 3
+    WAITING_FOR_USER = 4
 
 class DebridFile(BaseModel):
     """Represents a file in from a debrid service"""
@@ -51,7 +57,7 @@ class DebridFile(BaseModel):
         """Factory method to validate and create a DebridFile"""
         if not any(filename.endswith(ext) for ext in VIDEO_EXTENSIONS) and not "sample" in filename.lower():
             return None
-        
+
         filesize_mb = filesize_bytes / 1_000_000
         if filetype == "movie":
             if not (FILESIZE_MOVIE_CONSTRAINT[0] <= filesize_mb <= FILESIZE_MOVIE_CONSTRAINT[1]):
@@ -90,15 +96,15 @@ class TorrentInfo(BaseModel):
     """Torrent information from a debrid service"""
     id: Union[int, str]
     name: str
-    status: str = Field(default=None)
-    infohash: str = Field(default=None)
-    progress: float = Field(default=None)
-    bytes: int = Field(default=None)
-    created_at: datetime = Field(default=None)
-    expires_at: datetime = Field(default=None)
-    completed_at: datetime = Field(default=None)
-    alternative_filename: str = Field(default=None)
-    files: Dict[int, Dict[str, int | str]] = Field(default_factory=dict)  # Real-Debrid only
+    status: Optional[DownloadStatus] = Field(default=None)
+    infohash: Optional[str] = Field(default=None)
+    progress: Optional[float] = Field(default=None)
+    bytes: Optional[int] = Field(default=None)
+    created_at: Optional[datetime] = Field(default=None)
+    expires_at: Optional[datetime] = Field(default=None)
+    completed_at: Optional[datetime] = Field(default=None)
+    alternative_filename: Optional[str] = Field(default=None)
+    files: Optional[List[DebridFile]] = Field(default=[])
 
     @property
     def size_mb(self) -> float:
@@ -108,7 +114,10 @@ class TorrentInfo(BaseModel):
 
 class DownloadedTorrent(BaseModel):
     """Represents the result of a download operation"""
-    id: Union[int, str]
-    infohash: str
-    container: TorrentContainer
-    info: TorrentInfo
+    infohash: Optional[str] = Field(default=None)
+    id: Optional[Union[int, str]] = Field(default=None)
+    container: Optional[TorrentContainer] = Field(default=None)
+    info: Optional[TorrentInfo] = Field(default=None)
+    downloaded_at: datetime = Field(default=datetime.now())
+
+    model_config = ConfigDict(from_attributes=True)

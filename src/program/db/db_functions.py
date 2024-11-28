@@ -4,7 +4,7 @@ from threading import Event
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from sqlalchemy import delete, exists, insert, inspect, or_, select, text
+from sqlalchemy import delete, insert, inspect, select, text
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 import alembic
@@ -12,11 +12,29 @@ from program.media.stream import Stream, StreamBlacklistRelation, StreamRelation
 from program.services.libraries.symlink import fix_broken_symlinks
 from program.settings.manager import settings_manager
 from program.utils import root_dir
+from program.media.state import States
 
 from .db import db
 
 if TYPE_CHECKING:
     from program.media.item import MediaItem
+
+def get_items_by_state(state: States, session = None):
+    from program.media.item import MediaItem, Season, Show
+
+    _session = session if session else db.Session()
+    with _session:
+        query = (select(MediaItem)
+                .where(MediaItem.state == state)
+                .options(
+                selectinload(Show.seasons)
+                .selectinload(Season.episodes)
+            ))
+        items = _session.execute(query).scalars().all()
+        for item in items:
+            _session.expunge(item)
+
+        return items
 
 def get_item_by_id(item_id: str, item_types = None, session = None):
     if not item_id:
@@ -184,10 +202,6 @@ def reset_streams(item: "MediaItem"):
             delete(StreamBlacklistRelation).where(StreamBlacklistRelation.media_item_id == item.id)
         )
         session.commit()
-
-def clear_streams(item: "MediaItem"):
-    """Clear all streams for a media item."""
-    reset_streams(item)
 
 def clear_streams_by_id(media_item_id: str):
     """Clear all streams for a media item by the MediaItem id."""

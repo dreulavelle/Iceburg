@@ -1,7 +1,7 @@
 from loguru import logger
 
 from program.media import MediaItem, States
-from program.services.downloaders import Downloader
+from program.services.downloaders.downloader import Downloader
 from program.services.indexers.trakt import TraktIndexer
 from program.services.post_processing import PostProcessing, notify
 from program.services.post_processing.subliminal import Subliminal
@@ -46,6 +46,10 @@ def process_event(emitted_by: Service, existing_item: MediaItem | None = None, c
             items_to_submit = [e for e in existing_item.episodes if e.last_state != States.Completed and Scraping.should_submit(e)]
 
     elif existing_item is not None and existing_item.last_state == States.Scraped:
+        next_service = Downloader
+        items_to_submit = [existing_item]
+
+    elif existing_item is not None and existing_item.last_state == States.Downloading:
         next_service = Downloader
         items_to_submit = [existing_item]
 

@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Iterator, List, Optional, Tuple
 
 from loguru import logger
 from requests import Session
@@ -21,6 +21,7 @@ from program.utils.request import (
     create_service_session,
     get_rate_limit_params,
 )
+from program.services.downloaders.models import DebridFile, DownloadStatus, TorrentContainer, TorrentInfo
 
 from .shared import DownloaderBase, premium_days_left
 
@@ -44,7 +45,7 @@ class AllDebridRequestHandler(BaseRequestHandler):
 
 class AllDebridAPI:
     """Handles AllDebrid API communication"""
-    BASE_URL = "https://api.alldebrid.com/v4"
+    BASE_URL = "https://api.alldebrid.com/v4.1"
     AGENT = "Riven"
 
     def __init__(self, api_key: str, proxy_url: Optional[str] = None):
@@ -68,6 +69,7 @@ class AllDebridDownloader(DownloaderBase):
         self.key = "alldebrid"
         self.settings = settings_manager.settings.downloaders.all_debrid
         self.api = None
+        self.concurrent_download_limit = 30
         self.initialized = self.validate()
 
     def validate(self) -> bool:
@@ -129,12 +131,9 @@ class AllDebridDownloader(DownloaderBase):
         try:
             torrent_id = self.add_torrent(infohash)
             time.sleep(1)
-            info = self.get_torrent_info(torrent_id)
-            if info.status == "Ready":
-                files = self.get_files_and_links(torrent_id)
-                processed_files = [DebridFile.create(filename=file["n"], filesize_bytes=file["s"], filetype=item_type) for file in files]
-                if processed_files is not None:
-                    return_value = TorrentContainer(infohash=infohash, files=processed_files)
+            info = self.get_torrent_info(torrent_id, item_type)
+            if info.status == DownloadStatus.READY and info.files:
+                return_value = TorrentContainer(infohash=infohash, files=info.files)
         except Exception as e:
             logger.error(f"Failed to get instant availability: {e}")
         finally:
@@ -181,7 +180,30 @@ class AllDebridDownloader(DownloaderBase):
             logger.error(f"Failed to select files for torrent {torrent_id}: {e}")
             raise
 
-    def get_torrent_info(self, torrent_id: str) -> TorrentInfo:
+    def _status_to_enum(self, status: str):
+        if status == "In Queue":
+            return DownloadStatus.QUEUE
+        if status == "Active":
+            return DownloadStatus.DOWNLOADING
+        elif status == "Ready":
+            return DownloadStatus.READY
+        else:
+            return DownloadStatus.ERROR
+
+    def _walk_files(self, files: List[dict]) -> Iterator[Tuple[str, int]]:
+        """Walks nested files structure and yields filename, size pairs"""
+        dirs = []
+        for file in files:
+            try:
+                size = int(file.get("s", ""))
+                yield file.get("n", "UNKNOWN"), size
+            except ValueError:
+                dirs.append(file)
+
+        for directory in dirs:
+            yield from self._walk_files(directory.get("e", []))
+
+    def get_torrent_info(self, torrent_id: str, item_type: str = None) -> TorrentInfo:
         """
         Get information about a torrent
         Required by DownloaderBase
@@ -194,14 +216,20 @@ class AllDebridDownloader(DownloaderBase):
             info = response.get("magnets", {})
             if "filename" not in info:
                 raise AllDebridError("Invalid torrent info response")
-            return TorrentInfo(
+            return_value = TorrentInfo(
                 id=info["id"],
                 name=info["filename"],
-                status=info["status"],
+                status=self._status_to_enum(info["status"]),
                 bytes=info["size"],
                 created_at=info["uploadDate"],
-                progress=(info["size"] / info["downloaded"]) if info["downloaded"] != 0 else 0
+                progress=100 if info["statusCode"] == 4 else info["size"] / info["downloaded"] if info["downloaded"] != 0 else 0,
             )
+            if item_type and info.get("files", False):
+                for filename, filesize in self._walk_files(info["files"]):
+                    _file = DebridFile.create(filename=filename, filesize_bytes=filesize, filetype=item_type)
+                    if _file:
+                        return_value.files.append(_file)
+            return return_value
         except Exception as e:
             logger.error(f"Failed to get torrent info for {torrent_id}: {e}")
             raise

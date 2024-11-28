@@ -10,10 +10,9 @@ from program.services.content import (
     PlexWatchlist,
     TraktContent,
 )
-from program.services.downloaders import (  # AllDebridDownloader,
-    RealDebridDownloader,
-    TorBoxDownloader,
-)
+from program.services.downloaders.alldebrid import AllDebridDownloader
+from program.services.downloaders.torbox import TorBoxDownloader
+from program.services.downloaders.realdebrid import RealDebridDownloader
 
 # TorBoxDownloader,
 from program.services.libraries import SymlinkLibrary
@@ -37,7 +36,7 @@ Content = Union[Overseerr, PlexWatchlist, Listrr, Mdblist, TraktContent]
 Downloader = Union[
     RealDebridDownloader,
     TorBoxDownloader,
-    # AllDebridDownloader
+    AllDebridDownloader
 ]
 
 Service = Union[Content, SymlinkLibrary, Scraper, Downloader, Symlinker, Updater]

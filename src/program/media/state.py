@@ -8,6 +8,7 @@ class States(Enum):
     Requested = "Requested"
     Indexed = "Indexed"
     Scraped = "Scraped"
+    Downloading = "Downloading"
     Downloaded = "Downloaded"
     Symlinked = "Symlinked"
     Completed = "Completed"

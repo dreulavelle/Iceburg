@@ -20,7 +20,7 @@ from program.services.content import (
     PlexWatchlist,
     TraktContent,
 )
-from program.services.downloaders import Downloader
+from program.services.downloaders.downloader import Downloader
 from program.services.indexers.trakt import TraktIndexer
 from program.services.libraries import SymlinkLibrary
 from program.services.libraries.symlink import fix_broken_symlinks
