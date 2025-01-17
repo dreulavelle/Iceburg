@@ -235,7 +235,7 @@ class Program(threading.Thread):
                         previous_state, new_state = item.store_state()
                         if previous_state != new_state:
                             self.em.add_event(Event(emitted_by="UpdateOngoing", item_id=item_id))
-                            logger.debug(f"Updated state for {item.log_string} ({item.id}) from {previous_state.name} to {new_state.name}")
+                            logger.debug(f"State updated for {item.log_string} ({item.id}): {previous_state.name} -> {new_state.name}")
                             counter += 1
                         session.merge(item)
                         session.commit()
@@ -247,7 +247,7 @@ class Program(threading.Thread):
     def _schedule_functions(self) -> None:
         """Schedule each service based on its update interval."""
         scheduled_functions = {
-            self._update_ongoing: {"interval": 60 * 60 * 24},
+            self._update_ongoing: {"interval": 60 * 60 * 6},
             self._retry_library: {"interval": 60 * 60 * 24},
             log_cleaner: {"interval": 60 * 60},
             vacuum_and_analyze_index_maintenance: {"interval": 60 * 60 * 24},

@@ -190,7 +190,6 @@ class TraktAPI:
             logger.error(f"Failed to get show aliases for {imdb_id}")
         return {}
 
-
     def create_item_from_imdb_id(self, imdb_id: str, type: str = None) -> Optional[MediaItem]:
         """Wrapper for trakt.tv API search method."""
         url = f"{self.BASE_URL}/search/imdb/{imdb_id}?extended=full"

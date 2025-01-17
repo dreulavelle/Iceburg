@@ -1,8 +1,10 @@
+from datetime import datetime
 import os
 import re
 import secrets
 import string
 from pathlib import Path
+from typing import Optional
 
 from loguru import logger
 
@@ -36,3 +38,10 @@ def generate_api_key():
         api_key = API_KEY
 
     return api_key
+
+def get_earliest_date(trakt_date: datetime, tvmaze_date: datetime) -> Optional[datetime]:
+    """Get the earliest date from two datetime objects."""
+    if trakt_date.tzinfo is None or tvmaze_date.tzinfo is None:
+        logger.debug(f"Both datetime objects must be timezone-aware. trakt date: {trakt_date}, tvmaze date: {tvmaze_date}")
+        return None
+    return min(trakt_date, tvmaze_date)

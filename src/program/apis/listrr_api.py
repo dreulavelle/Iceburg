@@ -37,7 +37,7 @@ class ListrrAPI:
         self.trakt_api = di[TraktAPI]
 
     def validate(self):
-        return self.request_handler.execute(HttpMethod.GET, "")
+        return self.request_handler.execute(HttpMethod.GET, "/")
 
     def get_items_from_Listrr(self, content_type, content_lists) -> list[MediaItem] | list[str]:  # noqa: C901, PLR0912
         """Fetch unique IMDb IDs from Listrr for a given type and list of content."""

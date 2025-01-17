@@ -7,7 +7,7 @@ from .mdblist_api import MdblistAPI, MdblistAPIError
 from .overseerr_api import OverseerrAPI, OverseerrAPIError
 from .plex_api import PlexAPI, PlexAPIError
 from .trakt_api import TraktAPI, TraktAPIError
-
+from .tvmaze_api import TvmazeAPI
 
 def bootstrap_apis():
     __setup_trakt()
@@ -15,6 +15,7 @@ def bootstrap_apis():
     __setup_mdblist()
     __setup_overseerr()
     __setup_listrr()
+    __setup_tvmaze()
 
 def __setup_trakt():
     traktApi = TraktAPI(settings_manager.settings.content.trakt)
@@ -43,3 +44,7 @@ def __setup_listrr():
         return
     listrrApi = ListrrAPI(settings_manager.settings.content.listrr.api_key)
     di[ListrrAPI] = listrrApi
+
+def __setup_tvmaze():
+    tvmaze_api = TvmazeAPI()
+    di[TvmazeAPI] = tvmaze_api
