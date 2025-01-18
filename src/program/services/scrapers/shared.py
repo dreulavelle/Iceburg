@@ -90,6 +90,8 @@ def _parse_results(item: MediaItem, results: Dict[str, str], log_msg: bool = Tru
                 # Ex: [2018, 2019, 2020] for a 2019 movie
                 if _check_item_year(item, torrent.data):
                     torrents.add(torrent)
+                else:
+                    logger.debug(f"Ignoring torrent {torrent.infohash}:{raw_title} due to not in time year range, {item.log_string}")
 
             elif item.type == "show":
                 if torrent.data.seasons and not torrent.data.episodes:
@@ -97,11 +99,16 @@ def _parse_results(item: MediaItem, results: Dict[str, str], log_msg: bool = Tru
                     # shows according to uploaders
                     if len(torrent.data.seasons) >= (len(needed_seasons) - 1):
                         torrents.add(torrent)
+                    else:
+                        logger.debug(f"Ignoring torrent {torrent.infohash}:{raw_title} due mismatch in season size, required {len(needed_seasons)} current {len(torrent.data.seasons)}, {item.log_string}")
 
             elif item.type == "season":
                 # If the torrent has the needed seasons and no episodes, we can add it
                 if any(season in torrent.data.seasons for season in needed_seasons) and not torrent.data.episodes:
                     torrents.add(torrent)
+                else:
+                    logger.debug(f"Ignoring torrent {torrent.infohash}:{raw_title} due to missing required season, {item.log_string}")
+
 
             elif item.type == "episode":
                 # If the torrent has the season and episode numbers, we can add it
@@ -117,10 +124,15 @@ def _parse_results(item: MediaItem, results: Dict[str, str], log_msg: bool = Tru
                     for season in needed_seasons
                 ) and not torrent.data.episodes:
                     torrents.add(torrent)
+                else:
+                    logger.debug(f"Ignoring torrent {torrent.infohash}:{raw_title} due to mismatch in season and episode numbers, {item.log_string}")
 
+            else:
+                logger.debug(f"Skipping torrent {infohash}:{raw_title} as it does not fit to any category. {item.log_string}")
             processed_infohashes.add(infohash)
 
         except (ValueError, AttributeError) as e:
+            logger.debug(f"Invalid torrent {raw_title} : {e}")
             # The only stuff I've seen that show up here is titles with a date.
             # Dates can be sometimes parsed incorrectly by Arrow library,
             # so we'll just ignore them.
@@ -128,6 +140,7 @@ def _parse_results(item: MediaItem, results: Dict[str, str], log_msg: bool = Tru
                 logger.debug(f"Skipping torrent: '{raw_title}' - {e}")
             continue
         except GarbageTorrent as e:
+            logger.debug(f"GarbageTorrent {raw_title} due to {e}")
             if settings_manager.settings.scraping.parse_debug and log_msg:
                 logger.debug(e)
             continue
@@ -140,6 +153,7 @@ def _parse_results(item: MediaItem, results: Dict[str, str], log_msg: bool = Tru
             torrents_dict[torrent.infohash] = Stream(torrent)
         logger.log("SCRAPER", f"Kept {len(torrents_dict)} streams for {item.log_string} after processing bucket limit")
         return torrents_dict
+    logger.debug(f"No valid torrent remains after filtering for {item.log_string}")
     return {}
 
 
