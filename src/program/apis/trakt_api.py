@@ -1,8 +1,9 @@
 ﻿import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import List, Optional, Union
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo  # Import ZoneInfo
 
 from requests import RequestException, Session
 
@@ -358,9 +359,51 @@ class TraktAPI:
         return None
 
     def _get_formatted_date(self, data, item_type: str) -> Optional[datetime]:
-        """Get the formatted aired date from the data."""
+        """Get the formatted aired date from the data.
+        Trakt API provides all dates in UTC/GMT format (ISO 8601).
+        """
         if item_type in ["show", "season", "episode"] and (first_aired := getattr(data, "first_aired", None)):
-            return datetime.strptime(first_aired, "%Y-%m-%dT%H:%M:%S.%fZ")
-        if item_type == "movie" and (released := getattr(data, "released", None)):
-            return datetime.strptime(released, "%Y-%m-%d")
+            try:
+                # Parse the UTC time directly from Trakt's first_aired field
+                utc_time = datetime.fromisoformat(first_aired.replace('Z', '+00:00'))
+                
+                # Apply release delay if configured
+                if self.settings.release_delay_minutes > 0:
+                    utc_time = utc_time + timedelta(minutes=self.settings.release_delay_minutes)
+                    logger.debug(f"  Adding {self.settings.release_delay_minutes} minute delay to release time")
+                
+                logger.debug(f"Time conversion for {getattr(data, 'title', 'Unknown')}:")
+                logger.debug(f"  1. Raw time from Trakt (UTC): {first_aired}")
+                logger.debug(f"  2. Parsed UTC time: {utc_time}")
+                
+                # Convert to local time for display
+                local_time = utc_time.astimezone()
+                logger.debug(f"  3. Your local time will be: {local_time}")
+                
+                # Check if we have timezone information from Trakt
+                airs = getattr(data, "airs", None)
+                tz = getattr(airs, "timezone", None) if airs else None
+                if tz:
+                    logger.debug(f"  4. Show timezone from Trakt: {tz}")
+                    try:
+                        # Convert UTC time to show's timezone for reference
+                        show_time = utc_time.astimezone(ZoneInfo(tz))
+                        logger.debug(f"  5. Time in show's timezone: {show_time}")
+                    except Exception as e:
+                        logger.error(f"Failed to convert to show timezone: {e}")
+                
+                return utc_time
+            except (ValueError, TypeError) as e:
+                logger.error(f"Failed to parse airtime: {e}")
+                return None
+                
+        elif item_type == "movie" and (released := getattr(data, "released", None)):
+            try:
+                # Movies just have dates, set to midnight UTC
+                utc_time = datetime.strptime(released, "%Y-%m-%d").replace(hour=0, minute=0, second=0, tzinfo=ZoneInfo("UTC"))
+                logger.debug(f"Parsed movie release date: {released} -> {utc_time} UTC")
+                return utc_time
+            except ValueError:
+                logger.error(f"Failed to parse release date: {released}")
+                return None
         return None
