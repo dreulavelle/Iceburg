@@ -1,3 +1,4 @@
+"""Items router"""
 import asyncio
 from datetime import datetime
 from typing import Literal, Optional
@@ -6,46 +7,24 @@ import Levenshtein
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.exc import NoResultFound
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.exc import NoResultFound, SQLAlchemyError
+from sqlalchemy.orm import Session, with_polymorphic
 
-from program.db import db_functions
-from program.db.db import db, get_db
-from program.media.item import MediaItem
+from program.db.db import get_db
+from program.media.item import MediaItem, MediaType, Movie, Show, Season, Episode
 from program.media.state import States
 from program.services.content import Overseerr
 from program.symlink import Symlinker
 from program.types import Event
 
-from ..models.shared import MessageResponse
-
-router = APIRouter(
-    prefix="/items",
-    tags=["items"],
-    responses={404: {"description": "Not found"}},
-)
-
-
-def handle_ids(ids: str) -> list[str]:
-    ids = [str(id) for id in ids.split(",")] if "," in ids else [str(ids)]
-    if not ids:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No item ID provided")
-    return ids
-
+# Response Models
+class MessageResponse(BaseModel):
+    message: str
 
 class StateResponse(BaseModel):
     success: bool
     states: list[str]
-
-
-@router.get("/states", operation_id="get_states")
-async def get_states() -> StateResponse:
-    return {
-        "success": True,
-        "states": [state for state in States],
-    }
-
 
 class ItemsResponse(BaseModel):
     success: bool
@@ -54,6 +33,55 @@ class ItemsResponse(BaseModel):
     limit: int
     total_items: int
     total_pages: int
+
+class ResetResponse(BaseModel):
+    message: str
+    ids: list[str]
+
+class RetryResponse(BaseModel):
+    message: str
+    ids: list[str]
+
+class RemoveResponse(BaseModel):
+    message: str
+    ids: list[str]
+
+class PauseResponse(BaseModel):
+    """Response model for pause/unpause operations"""
+    message: str
+    ids: list[str]
+
+class PauseStateResponse(BaseModel):
+    """Response model for pause state check"""
+    is_paused: bool
+    paused_at: Optional[str]
+    item_id: str
+    title: Optional[str]
+
+class AllPausedResponse(BaseModel):
+    """Response model for getting all paused items"""
+    count: int
+    items: list[dict]
+
+router = APIRouter(
+    prefix="/items",
+    tags=["items"],
+)
+
+
+def handle_ids(ids: Optional[str]) -> list[str]:
+    """Handle comma-separated IDs or single ID"""
+    if not ids:
+        raise HTTPException(status_code=400, detail="No item ID provided")
+    return [str(id) for id in ids.split(",")] if "," in ids else [str(ids)]
+
+
+@router.get("/states", operation_id="get_states")
+async def get_states() -> StateResponse:
+    return {
+        "success": True,
+        "states": [state for state in States],
+    }
 
 
 @router.get(
@@ -187,6 +215,7 @@ async def get_items(
     summary="Add Media Items",
     description="Add media items with bases on imdb IDs",
     operation_id="add_items",
+    response_model=MessageResponse
 )
 async def add_items(request: Request, imdb_ids: str = None) -> MessageResponse:
     if not imdb_ids:
@@ -211,26 +240,7 @@ async def add_items(request: Request, imdb_ids: str = None) -> MessageResponse:
             )
             request.app.program.em.add_item(item)
 
-    return {"message": f"Added {len(valid_ids)} item(s) to the queue"}
-
-@router.get(
-    "/{id}",
-    summary="Retrieve Media Item",
-    description="Fetch a single media item by ID",
-    operation_id="get_item",
-)
-async def get_item(_: Request, id: str, use_tmdb_id: Optional[bool] = False) -> dict:
-    with db.Session() as session:
-        try:
-            query = select(MediaItem)
-            if use_tmdb_id:
-                query = query.where(MediaItem.tmdb_id == id)
-            else:
-                query = query.where(MediaItem.id == id)
-            item = session.execute(query).unique().scalar_one()
-        except NoResultFound:
-            raise HTTPException(status_code=404, detail="Item not found")
-        return item.to_extended_dict(with_streams=False)
+    return MessageResponse(message=f"Added {len(valid_ids)} item(s) to the queue")
 
 
 @router.get(
@@ -239,24 +249,26 @@ async def get_item(_: Request, id: str, use_tmdb_id: Optional[bool] = False) -> 
     description="Fetch media items by IMDb IDs",
     operation_id="get_items_by_imdb_ids",
 )
-async def get_items_by_imdb_ids(request: Request, imdb_ids: str) -> list[dict]:
-    ids = imdb_ids.split(",")
-    with db.Session() as session:
+async def get_items_by_imdb_ids(
+    imdb_ids: str,
+    session: Session = Depends(get_db)
+) -> list[dict]:
+    """Get media items by IMDb IDs"""
+    try:
         items = []
-        for id in ids:
-            item = (
-                session.execute(select(MediaItem).where(MediaItem.imdb_id == id))
-                .unique()
-                .scalar_one()
-            )
+        for imdb_id in imdb_ids.split(","):
+            item = session.execute(
+                select(MediaItem)
+                .where(MediaItem.imdb_id == imdb_id)
+            ).scalar_one_or_none()
+            
             if item:
                 items.append(item)
-        return [item.to_extended_dict() for item in items]
-
-
-class ResetResponse(BaseModel):
-    message: str
-    ids: list[str]
+                
+        return [item.to_dict() for item in items]
+    except SQLAlchemyError as e:
+        logger.error(f"Database error: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.post(
@@ -284,11 +296,6 @@ async def reset_items(request: Request, ids: str) -> ResetResponse:
     return {"message": f"Reset items with id {ids}", "ids": ids}
 
 
-class RetryResponse(BaseModel):
-    message: str
-    ids: list[str]
-
-
 @router.post(
     "/retry",
     summary="Retry Media Items",
@@ -312,11 +319,6 @@ async def retry_items(request: Request, ids: str) -> RetryResponse:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     return {"message": f"Retried items with ids {ids}", "ids": ids}
-
-
-class RemoveResponse(BaseModel):
-    message: str
-    ids: list[str]
 
 
 @router.delete(
@@ -433,3 +435,259 @@ async def unblacklist_stream(_: Request, item_id: str, stream_id: int, db: Sessi
     return {
         "message": f"Unblacklisted stream {stream_id} for item {item_id}",
     }
+
+# Pause-related endpoints (must come before generic /{id} routes)
+@router.get("/paused", response_model=AllPausedResponse)
+async def get_all_paused(
+    type: Optional[str] = None,
+    session: Session = Depends(get_db)
+) -> AllPausedResponse:
+    """Get all paused items"""
+    try:
+        # Build base query with explicit joins
+        query = (
+            select(MediaItem)
+            .outerjoin(Movie, Movie.id == MediaItem.id)
+            .outerjoin(Show, Show.id == MediaItem.id)
+            .outerjoin(Season, Season.id == MediaItem.id)
+            .outerjoin(Episode, Episode.id == MediaItem.id)
+            .distinct()
+            .where(MediaItem.is_paused == True)
+        )
+
+        if type:
+            type_lower = type.lower()
+            valid_types = [t.value.lower() for t in MediaType]
+            if type_lower not in valid_types:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid type. Must be one of: {', '.join(valid_types)}"
+                )
+            query = query.where(func.lower(MediaItem.type) == type_lower)
+
+        logger.debug(f"Executing query: {query}")
+        logger.debug(f"Query parameters: {query.compile().params}")
+        
+        result = session.execute(query).scalars().unique().all()
+        logger.debug(f"Found {len(result)} paused items")
+        
+        # Add debug logging for each item
+        for item in result:
+            logger.debug(f"Paused item: id={item.id}, type={item.type}, is_paused={item.is_paused}, class={item.__class__.__name__}")
+            logger.debug(f"Item dict before conversion: {vars(item)}")
+            
+        items = [item.to_dict() for item in result]
+        logger.debug(f"Converted items to dict: {items}")
+
+        return AllPausedResponse(
+            count=len(result),
+            items=items
+        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error occurred: {str(e)}"
+        )
+
+@router.get("/paused/count", response_model=dict)
+async def get_paused_count(
+    type: Optional[str] = None,
+    session: Session = Depends(get_db)
+) -> dict:
+    """Get count of paused items"""
+    try:
+        # Use same explicit join structure
+        query = (
+            select(func.count(func.distinct(MediaItem.id)))
+            .select_from(MediaItem)
+            .outerjoin(Movie, Movie.id == MediaItem.id)
+            .outerjoin(Show, Show.id == MediaItem.id)
+            .outerjoin(Season, Season.id == MediaItem.id)
+            .outerjoin(Episode, Episode.id == MediaItem.id)
+            .where(MediaItem.is_paused == True)
+        )
+
+        if type:
+            type_lower = type.lower()
+            query = query.where(func.lower(MediaItem.type) == type_lower)
+
+        logger.debug(f"Executing count query: {query}")
+        count = session.execute(query).scalar()
+        logger.debug(f"Found {count} paused items")
+
+        return {"count": count}
+    except SQLAlchemyError as e:
+        logger.error(f"Database error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error occurred: {str(e)}"
+        )
+
+@router.get("/pause/{id}", response_model=PauseStateResponse)
+async def get_pause_state(
+    id: str,
+    session: Session = Depends(get_db)
+) -> PauseStateResponse:
+    """Check if a media item is paused"""
+    try:
+        item = session.execute(
+            select(MediaItem).where(MediaItem.id == id)
+        ).scalar_one_or_none()
+        
+        if not item:
+            raise HTTPException(status_code=404, detail=f"Item {id} not found")
+        
+        return PauseStateResponse(
+            is_paused=item.is_paused,
+            paused_at=str(item.paused_at) if item.paused_at else None,
+            item_id=item.id,
+            title=item.title
+        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error occurred: {str(e)}"
+        )
+
+@router.post("/{id}/pause", response_model=PauseResponse)
+@router.post("/pause", response_model=PauseResponse)
+async def pause_items(
+    request: Request,
+    id: Optional[str] = None,  # Path parameter
+    ids: Optional[str] = None,  # Query parameter
+    session: Session = Depends(get_db)
+) -> PauseResponse:
+    """Pause one or more media items"""
+    try:
+        item_ids = []
+        if id:
+            item_ids = [id]
+        elif ids:
+            item_ids = [i.strip() for i in ids.split(",") if i.strip()]
+        
+        if not item_ids:
+            raise HTTPException(status_code=400, detail="No item IDs provided")
+            
+        query = select(MediaItem).where(MediaItem.id.in_(item_ids))
+        items = session.execute(query).scalars().all()
+        
+        found_ids = {item.id for item in items}
+        missing_ids = set(item_ids) - found_ids
+        
+        if not items:
+            raise HTTPException(status_code=404, detail="No items found")
+            
+        for item in items:
+            if not item.is_paused:  # Only pause if not already paused
+                item.is_paused = True
+                item.paused_at = datetime.utcnow()
+                item.paused_by = request.state.user.username if hasattr(request.state, 'user') else None
+        
+        session.commit()
+        
+        message = f"Successfully paused {len(items)} items"
+        if missing_ids:
+            message += f". {len(missing_ids)} items not found: {', '.join(missing_ids)}"
+        
+        return PauseResponse(
+            message=message,
+            ids=list(found_ids)
+        )
+    except SQLAlchemyError as e:
+        session.rollback()
+        logger.error(f"Database error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error occurred: {str(e)}"
+        )
+
+@router.post("/{id}/unpause", response_model=PauseResponse)
+@router.post("/unpause", response_model=PauseResponse)
+async def unpause_items(
+    request: Request,
+    id: Optional[str] = None,  # Path parameter
+    ids: Optional[str] = None,  # Query parameter
+    session: Session = Depends(get_db)
+) -> PauseResponse:
+    """Unpause one or more media items"""
+    try:
+        item_ids = []
+        if id:
+            item_ids = [id]
+        elif ids:
+            item_ids = [i.strip() for i in ids.split(",") if i.strip()]
+        
+        if not item_ids:
+            raise HTTPException(status_code=400, detail="No item IDs provided")
+            
+        query = select(MediaItem).where(MediaItem.id.in_(item_ids))
+        items = session.execute(query).scalars().all()
+        
+        found_ids = {item.id for item in items}
+        missing_ids = set(item_ids) - found_ids
+        
+        if not items:
+            raise HTTPException(status_code=404, detail="No items found")
+            
+        for item in items:
+            item.is_paused = False
+            item.unpaused_at = datetime.utcnow()
+        
+        session.commit()
+        
+        message = f"Successfully unpaused {len(items)} items"
+        if missing_ids:
+            message += f". {len(missing_ids)} items not found: {', '.join(missing_ids)}"
+        
+        return PauseResponse(
+            message=message,
+            ids=list(found_ids)
+        )
+    except SQLAlchemyError as e:
+        session.rollback()
+        logger.error(f"Database error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error occurred: {str(e)}"
+        )
+
+# Generic item routes (must come after specific routes)
+@router.get(
+    "/{id}",
+    summary="Retrieve Media Item",
+    description="Fetch a single media item by ID",
+    operation_id="get_item",
+    response_model=ItemsResponse
+)
+async def get_item(
+    id: str,
+    session: Session = Depends(get_db)
+) -> ItemsResponse:
+    """Get a specific media item"""
+    try:
+        query = (
+            select(MediaItem)
+            .where(MediaItem.id == id)
+        )
+        
+        item = session.execute(query).scalar_one_or_none()
+        
+        if not item:
+            raise HTTPException(status_code=404, detail=f"Item {id} not found")
+            
+        return ItemsResponse(
+            success=True,
+            items=[item.to_dict()],
+            page=1,
+            limit=1,
+            total_items=1,
+            total_pages=1
+        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error occurred: {str(e)}"
+        )
