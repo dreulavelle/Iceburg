@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.21.0](https://github.com/rivenmedia/riven/compare/v0.20.1...v0.21.0) (2025-01-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* Torbox Removal ([#971](https://github.com/rivenmedia/riven/issues/971))
+
+### Features
+
+* Add 6th retry attempt to symlinker ([#926](https://github.com/rivenmedia/riven/issues/926)) ([6d43d7f](https://github.com/rivenmedia/riven/commit/6d43d7f34bacb82ad8e2cca08f6ab15c6b3a2e2c))
+
+
+### Bug Fixes
+
+* add alldebrid as option in mediafusion ([42829a2](https://github.com/rivenmedia/riven/commit/42829a2e245169443187ca581bf2dce190f1c7c9))
+* add strong typed response to scrape api endpoint ([44f047e](https://github.com/rivenmedia/riven/commit/44f047e7e00c58628fa0669f1630b80f8bbe936e))
+* api manual scraping fixes. wip ([7fb50f8](https://github.com/rivenmedia/riven/commit/7fb50f856d2395d2cbdc977a35e0a5ae152eecc0))
+* fixed alldebrid instantavail file processing ([#916](https://github.com/rivenmedia/riven/issues/916)) ([d2a6b5b](https://github.com/rivenmedia/riven/commit/d2a6b5bbf0e2c83e3f6f4899e8a367af72d05ae7))
+* manual scraping updated for downloader rework ([346b352](https://github.com/rivenmedia/riven/commit/346b352c3c6dfcf857b04d65a396ce06e1d70263))
+* no streams found or filtered streams from adult content throws e… ([#976](https://github.com/rivenmedia/riven/issues/976)) ([a18a66c](https://github.com/rivenmedia/riven/commit/a18a66ce8747bd1d81e119acbc320f30d03a8557))
+* no streams found or filtered streams from adult content throws error ([a18a66c](https://github.com/rivenmedia/riven/commit/a18a66ce8747bd1d81e119acbc320f30d03a8557))
+* remove catalog configuration from Mediafusion settings and scraper ([#919](https://github.com/rivenmedia/riven/issues/919)) ([fc7ed05](https://github.com/rivenmedia/riven/commit/fc7ed053dbd9c39df869c61a147bfbf8890a6503))
+* Torbox Removal ([#971](https://github.com/rivenmedia/riven/issues/971)) ([5d49499](https://github.com/rivenmedia/riven/commit/5d49499ddfc2582945048f1444a3d3445bb58cef))
+* update ListrrAPI validate method to use correct path ([#906](https://github.com/rivenmedia/riven/issues/906)) ([7659a37](https://github.com/rivenmedia/riven/commit/7659a37d30704b46107b6441e7a40f386ec82101))
+* updated sample handling for allowed video files ([8a5e849](https://github.com/rivenmedia/riven/commit/8a5e849aca371c28c418270bdbb863770389f2b7))
+
+
+### Miscellaneous Chores
+
+* release 0.21.0 ([c9cc836](https://github.com/rivenmedia/riven/commit/c9cc836b5033396175e960ee8f93ab78bfc8e453))
+
 ## [0.20.1](https://github.com/rivenmedia/riven/compare/v0.20.0...v0.20.1) (2024-11-27)
 
 
