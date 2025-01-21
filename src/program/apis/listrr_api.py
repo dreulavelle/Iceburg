@@ -55,13 +55,13 @@ class ListrrAPI:
                     url = f"api/List/{content_type}/{list_id}/ReleaseDate/Descending/{page}"
                     response = self.request_handler.execute(HttpMethod.GET, url)
                     data = response.data
-                    total_pages = data.get("pages", 1)
-                    for item in data.get("items", []):
-                        imdb_id = item.get("imDbId")
+                    total_pages = getattr(data, "pages", 1)
+                    for item in getattr(data, "items", []):
+                        imdb_id = getattr(item,"imDbId")
                         if imdb_id:
                             unique_ids.add(imdb_id)
-                        elif content_type == "Movies" and item.get("tmDbId"):
-                            imdb_id = self.trakt_api.get_imdbid_from_tmdb(item["tmDbId"])
+                        elif content_type == "Movies" and getattr(item, "tmDbId"):
+                            imdb_id = self.trakt_api.get_imdbid_from_tmdb(getattr(item, "tmDbId"))
                             if imdb_id:
                                 unique_ids.add(imdb_id)
                 except HTTPError as e:
