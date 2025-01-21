@@ -19,7 +19,7 @@ from program.services.indexers.trakt import TraktIndexer
 from program.services.scrapers import Scraping
 from program.services.scrapers.shared import rtn
 from program.types import Event
-from program.services.downloaders.models import TorrentContainer, TorrentInfo
+from program.services.downloaders.models import TorrentContainer, TorrentInfo, DebridFile
 
 
 class Stream(BaseModel):
@@ -53,12 +53,7 @@ class UpdateAttributesResponse(BaseModel):
 class SessionResponse(BaseModel):
     message: str
 
-class ContainerFile(BaseModel):
-    """Individual file entry in a container"""
-    filename: str
-    filesize: Optional[int] = None
-
-ContainerMap: TypeAlias = Dict[str, ContainerFile]
+ContainerMap: TypeAlias = Dict[str, DebridFile]
 
 class Container(RootModel[ContainerMap]):
     """
@@ -78,7 +73,7 @@ class Container(RootModel[ContainerMap]):
     """
     root: ContainerMap
 
-SeasonEpisodeMap: TypeAlias = Dict[int, Dict[int, ContainerFile]]
+SeasonEpisodeMap: TypeAlias = Dict[int, Dict[int, DebridFile]]
 
 class ShowFileData(RootModel[SeasonEpisodeMap]):
     """
@@ -329,7 +324,7 @@ def manual_select_files(request: Request, session_id, files: Container) -> Selec
     summary="Match container files to item",
     operation_id="manual_update_attributes"
 )
-async def manual_update_attributes(request: Request, session_id, data: Union[ContainerFile, ShowFileData]) -> UpdateAttributesResponse:
+async def manual_update_attributes(request: Request, session_id, data: Union[DebridFile, ShowFileData]) -> UpdateAttributesResponse:
     session = session_manager.get_session(session_id)
     log_string = None
     if not session:

@@ -41,7 +41,7 @@ class NoMatchingFilesException(Exception):
 
 
 class DebridFile(BaseModel):
-    """Represents a file in from a debrid service"""
+    """Represents a file from a debrid service"""
     file_id: Optional[int] = Field(default=None)
     filename: Optional[str] = Field(default=None)
     filesize: Optional[int] = Field(default=None)
