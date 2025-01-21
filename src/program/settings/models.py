@@ -167,6 +167,7 @@ class TraktModel(Updatable):
     most_watched_period: str = "weekly"
     most_watched_count: int = 10
     update_interval: int = 86400
+    release_delay_minutes: int = Field(default=60, description="Number of minutes to delay the state change after release")
     oauth: TraktOauthModel = TraktOauthModel()
 
 

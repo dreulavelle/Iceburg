@@ -213,10 +213,11 @@ async def add_items(request: Request, imdb_ids: str = None) -> MessageResponse:
 
     return {"message": f"Added {len(valid_ids)} item(s) to the queue"}
 
+
 @router.get(
     "/{id}",
-    summary="Retrieve Media Item",
-    description="Fetch a single media item by ID",
+    summary="Retrieve Media Item By ID",
+    description="Fetch a media item by its ID",
     operation_id="get_item",
 )
 async def get_item(_: Request, id: str, use_tmdb_id: Optional[bool] = False) -> dict:
@@ -227,10 +228,24 @@ async def get_item(_: Request, id: str, use_tmdb_id: Optional[bool] = False) -> 
                 query = query.where(MediaItem.tmdb_id == id)
             else:
                 query = query.where(MediaItem.id == id)
-            item = session.execute(query).unique().scalar_one()
+            
+            # Get all matching items and use the first one
+            items = session.execute(query).unique().scalars().all()
+            if not items:
+                raise HTTPException(status_code=404, detail="Item not found")
+            
+            # Use the first item if there are multiple
+            item = items[0]
+            if len(items) > 1:
+                # Log details about each duplicate
+                logger.warning(f"Multiple items found for ID {id}:")
+                for i, dupe in enumerate(items):
+                    logger.warning(f"  {i+1}. {dupe.type} - {dupe.log_string} (ID: {dupe.id})")
+                logger.warning(f"Using first item: {item.type} - {item.log_string}")
+            
+            return item.to_extended_dict(with_streams=False)
         except NoResultFound:
             raise HTTPException(status_code=404, detail="Item not found")
-        return item.to_extended_dict(with_streams=False)
 
 
 @router.get(

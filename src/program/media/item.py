@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Self
+from zoneinfo import ZoneInfo
 
 import sqlalchemy
 from loguru import logger
@@ -174,9 +175,16 @@ class MediaItem(db.Model):
     @property
     def is_released(self) -> bool:
         """Check if an item has been released."""
-        if self.aired_at and self.aired_at <= datetime.now():
-            return True
-        return False
+        if self.aired_at is None:
+            return False
+            
+        # Get current time with timezone info
+        if self.aired_at.tzinfo is None:
+            # If aired_at is naive, assume UTC
+            self.aired_at = self.aired_at.replace(tzinfo=ZoneInfo("UTC"))
+            
+        now = datetime.now(tz=self.aired_at.tzinfo)
+        return self.aired_at <= now
 
     @property
     def state(self):
@@ -391,6 +399,82 @@ class MediaItem(db.Model):
     def log_string(self):
         return self.title or self.id
 
+    def get_top_title(self) -> str:
+        """Get the top title of the item."""
+        if self.type == "season":
+            return self.parent.title
+        elif self.type == "episode":
+            return self.parent.parent.title
+        else:
+            return self.title
+
+    def get_top_imdb_id(self) -> str:
+        """Get the imdb_id of the item at the top of the hierarchy."""
+        if self.type == "season":
+            return self.parent.imdb_id
+        elif self.type == "episode":
+            return self.parent.parent.imdb_id
+        return self.imdb_id
+
+    def get_aliases(self) -> dict:
+        """Get the aliases of the item."""
+        if self.type == "season":
+            return self.parent.aliases
+        elif self.type == "episode":
+            return self.parent.parent.aliases
+        else:
+            return self.aliases
+
+    def __hash__(self):
+        return hash(self.id)
+
+    def reset(self):
+        """Reset item attributes."""
+        if self.type == "show":
+            for season in self.seasons:
+                for episode in season.episodes:
+                    episode._reset()
+                season._reset()
+        elif self.type == "season":
+            for episode in self.episodes:
+                episode._reset()
+        self._reset()
+        if self.title:
+            self.store_state(States.Indexed)
+        else:
+            self.store_state(States.Requested)
+
+    def _reset(self):
+        """Reset item attributes for rescraping."""
+        if self.symlink_path:
+            if Path(self.symlink_path).exists():
+                Path(self.symlink_path).unlink()
+            self.set("symlink_path", None)
+
+        try:
+            for subtitle in self.subtitles:
+                subtitle.remove()
+        except Exception as e:
+            logger.warning(f"Failed to remove subtitles for {self.log_string}: {str(e)}")
+
+        self.set("file", None)
+        self.set("folder", None)
+        self.set("alternative_folder", None)
+
+        reset_streams(self)
+        self.active_stream = {}
+
+        self.set("active_stream", {})
+        self.set("symlinked", False)
+        self.set("symlinked_at", None)
+        self.set("update_folder", None)
+        self.set("scraped_at", None)
+
+        self.set("symlinked_times", 0)
+        self.set("scraped_times", 0)
+
+        logger.debug(f"Item {self.log_string} has been reset")
+
     @property
     def collection(self):
         return self.parent.collection if self.parent else self.id
@@ -581,7 +665,12 @@ class Season(MediaItem):
 
     @property
     def is_released(self) -> bool:
-        return any(episode.is_released for episode in self.episodes)
+        """Check if an item has been released."""
+        if self.aired_at:
+            # Use current time for comparison to include time component
+            current_time = datetime.now()
+            return self.aired_at <= current_time
+        return False
 
     def __repr__(self):
         return f"Season:{self.number}:{self.state.name}"
