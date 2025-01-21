@@ -55,12 +55,13 @@ class SessionResponse(BaseModel):
 
 class ContainerFile(BaseModel):
     """Individual file entry in a container"""
+    file_id: int
     filename: str
     filesize: Optional[int] = None
 
 ContainerMap: TypeAlias = Dict[str, ContainerFile]
 
-class Container(RootModel[ContainerMap]):
+class Container(BaseModel):
     """
     Root model for container mapping file IDs to file information.
 
@@ -76,11 +77,12 @@ class Container(RootModel[ContainerMap]):
         }
     }
     """
-    root: ContainerMap
+    infohash: str
+    files: List[ContainerFile]
 
 SeasonEpisodeMap: TypeAlias = Dict[int, Dict[int, ContainerFile]]
 
-class ShowFileData(RootModel[SeasonEpisodeMap]):
+class ShowFileData(BaseModel):
     """
     Root model for show file data that maps seasons to episodes to file data.
 
@@ -95,8 +97,8 @@ class ShowFileData(RootModel[SeasonEpisodeMap]):
         }
     }
     """
-
-    root: SeasonEpisodeMap
+    infohash: str
+    files: SeasonEpisodeMap
 
 class ScrapingSession:
     def __init__(self, id: str, item_id: str, magnet: str):
