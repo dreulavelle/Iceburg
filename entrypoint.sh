@@ -3,6 +3,7 @@
 # Default PUID and PGID to 1000 if not set
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
+PORT=${PORT:-8080}
 
 echo "Starting Container with $PUID:$PGID permissions..."
 
@@ -77,15 +78,15 @@ echo "Container Initialization complete."
 echo "Starting Riven (Backend)..."
 if [ "$PUID" = "0" ]; then
     if [ "${DEBUG}" != "" ]; then  # check if DEBUG is set to a truthy value
-        cd /riven/src && poetry add debugpy && poetry run python3 -m debugpy --listen 0.0.0.0:5678 main.py
+        cd /riven/src && poetry add debugpy && poetry run python3 -m debugpy --listen 0.0.0.0:5678 main.py --port $PORT
     else
-        cd /riven/src && poetry run python3 main.py
+        cd /riven/src && poetry run python3 main.py --port $PORT
     fi
 else
     if [ "${DEBUG}" != "" ]; then  # check if DEBUG is set to a truthy value
         poetry add debugpy 
-        exec su -m $USERNAME -c "cd /riven/src && poetry run python3 -m debugpy --listen 0.0.0.0:5678 main.py"
+        exec su -m $USERNAME -c "cd /riven/src && poetry run python3 -m debugpy --listen 0.0.0.0:5678 main.py --port $PORT"
     else
-        su -m "$USERNAME" -c "cd /riven/src && poetry run python3 main.py"
+        su -m "$USERNAME" -c "cd /riven/src && poetry run python3 main.py --port $PORT"
     fi
 fi
